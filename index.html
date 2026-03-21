@@ -1,54 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Spatial Studio</title>
-  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
-  <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spatial Studio</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header>
   <div class="logo">Spatial <span>Studio</span></div>
   <div class="status-dot">
-    <div class="dot" id="api-dot" style="background:#f59e0b"></div>
-    <span id="api-status">Not connected</span>
+    <div class="dot" id="conn-dot"></div>
+    <span id="conn-label">Not connected</span>
   </div>
 </header>
 
 <main>
-  <!-- 3D Viewer -->
+
+  <!-- Viewer -->
   <div class="viewer-panel">
     <div class="viewer-toolbar">
-      <span class="viewer-label">3D Viewport</span>
-      <div class="viewer-actions">
-        <button class="icon-btn" title="Reset camera" onclick="resetCamera()">⟳</button>
-        <button class="icon-btn" title="Fullscreen" onclick="toggleFullscreen()">⛶</button>
+      <div class="viewer-label" id="file-label">3D Viewport</div>
+      <div class="view-toggle">
+        <button class="toggle-btn active" id="btn-render" onclick="setView('render')">Render</button>
+        <button class="toggle-btn" id="btn-3d" onclick="setView('3d')">3D View</button>
       </div>
     </div>
 
-    <div id="empty-state" class="empty-viewer">
-      <div class="empty-icon">🪑</div>
-      <p>Upload a .glb file to view your model in 3D</p>
+    <div class="render-view" id="render-view">
+      <div class="empty-viewer" id="empty-viewer">
+        <div class="empty-icon">🪑</div>
+        <p>Upload a .glb file and enter a prompt to render</p>
+      </div>
+      <img id="render-img" src="" alt="Render result">
     </div>
 
     <model-viewer
       id="model-viewer"
-      style="display:none; flex:1; width:100%;"
-      camera-controls
       auto-rotate
+      camera-controls
       shadow-intensity="1"
-      exposure="1"
       environment-image="neutral"
-      tone-mapping="neutral"
-      ar
     ></model-viewer>
 
     <div class="render-overlay" id="render-overlay">
       <div class="spinner"></div>
       <div class="render-status" id="render-status">Sending to Blender...</div>
-      <div class="render-progress"><div class="render-progress-bar" id="progress-bar"></div></div>
+      <div class="render-progress">
+        <div class="render-progress-bar" id="progress-bar"></div>
+      </div>
+    </div>
+
+    <div class="stats-bar">
+      <span>GPU <span class="stat-val">RTX 4090</span></span>
+      <span>Engine <span class="stat-val">Cycles</span></span>
+      <span>Last render <span class="stat-val" id="stat-time">—</span></span>
+      <span>Samples <span class="stat-val">256</span></span>
     </div>
   </div>
 
@@ -59,38 +68,36 @@
       <div class="section-label">Model</div>
       <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
         <div class="upload-icon">📦</div>
-        <div class="upload-text" id="upload-text">
-          <strong>Click to upload</strong> or drag & drop<br>.glb or .gltf file
-        </div>
+        <div class="upload-text"><strong>Click to upload</strong> or drag & drop<br>.glb or .gltf file</div>
       </div>
-      <input type="file" id="file-input" accept=".glb,.gltf" onchange="handleFileUpload(event)">
+      <input type="file" id="file-input" accept=".glb,.gltf">
     </div>
 
     <div class="panel-section">
       <div class="section-label">Material Preset</div>
       <div class="presets-grid">
-        <button class="preset-btn" onclick="selectPreset(this, 'polished chrome metal, highly reflective, mirror-like surface')">
+        <button class="preset-btn" onclick="selectPreset(this, 'chrome metal, highly reflective, mirror finish')">
           <div class="preset-swatch" style="background: linear-gradient(135deg, #e8e8e8, #a0a0a0)"></div>
           <div class="preset-name">Chrome</div>
         </button>
-        <button class="preset-btn" onclick="selectPreset(this, 'brushed steel metal, matte metallic finish, industrial look')">
-          <div class="preset-swatch" style="background: linear-gradient(135deg, #b0b8c1, #7a8a96)"></div>
+        <button class="preset-btn" onclick="selectPreset(this, 'brushed steel metal, industrial')">
+          <div class="preset-swatch" style="background: linear-gradient(135deg, #b0b8c1, #7a8694)"></div>
           <div class="preset-name">Steel</div>
         </button>
-        <button class="preset-btn" onclick="selectPreset(this, 'warm polished gold metal, luxury feel, rich reflections')">
-          <div class="preset-swatch" style="background: linear-gradient(135deg, #f0c040, #c8961a)"></div>
+        <button class="preset-btn" onclick="selectPreset(this, 'polished gold, luxury metallic')">
+          <div class="preset-swatch" style="background: linear-gradient(135deg, #f5d060, #c8960c)"></div>
           <div class="preset-name">Gold</div>
         </button>
-        <button class="preset-btn" onclick="selectPreset(this, 'natural oak wood, warm grain texture, matte finish')">
-          <div class="preset-swatch" style="background: linear-gradient(135deg, #c8a870, #8b6340)"></div>
+        <button class="preset-btn" onclick="selectPreset(this, 'warm oak wood texture, natural grain')">
+          <div class="preset-swatch" style="background: linear-gradient(135deg, #c8956c, #9b6a3e)"></div>
           <div class="preset-name">Oak</div>
         </button>
-        <button class="preset-btn" onclick="selectPreset(this, 'dark walnut wood, rich deep brown, smooth finish')">
-          <div class="preset-swatch" style="background: linear-gradient(135deg, #6b4226, #3d2010)"></div>
+        <button class="preset-btn" onclick="selectPreset(this, 'dark walnut wood, rich deep grain')">
+          <div class="preset-swatch" style="background: linear-gradient(135deg, #6b4c3b, #3d2b1f)"></div>
           <div class="preset-name">Walnut</div>
         </button>
-        <button class="preset-btn" onclick="selectPreset(this, 'cream linen fabric, soft textile texture, matte')">
-          <div class="preset-swatch" style="background: linear-gradient(135deg, #f0ebe0, #d4c9b0)"></div>
+        <button class="preset-btn" onclick="selectPreset(this, 'soft linen fabric, matte texture')">
+          <div class="preset-swatch" style="background: linear-gradient(135deg, #e8e0d4, #c8bfb0)"></div>
           <div class="preset-name">Linen</div>
         </button>
       </div>
@@ -99,13 +106,13 @@
     <div class="panel-section">
       <div class="section-label">Prompt</div>
       <div class="prompt-area">
-        <textarea class="prompt-input" id="prompt-input" placeholder="Describe the material or finish you want..." rows="4"></textarea>
+        <textarea class="prompt-input" id="prompt-input" placeholder="Describe the material or finish you want..."></textarea>
         <div class="prompt-suggestions">
-          <button class="suggestion" onclick="appendSuggestion('make it glossy')">glossy</button>
-          <button class="suggestion" onclick="appendSuggestion('add rust and wear')">worn</button>
-          <button class="suggestion" onclick="appendSuggestion('make it matte black')">matte black</button>
-          <button class="suggestion" onclick="appendSuggestion('make it transparent glass')">glass</button>
-          <button class="suggestion" onclick="appendSuggestion('make it bright white ceramic')">ceramic</button>
+          <button class="suggestion" onclick="addSuggestion('glossy')">glossy</button>
+          <button class="suggestion" onclick="addSuggestion('worn')">worn</button>
+          <button class="suggestion" onclick="addSuggestion('matte black')">matte black</button>
+          <button class="suggestion" onclick="addSuggestion('glass')">glass</button>
+          <button class="suggestion" onclick="addSuggestion('ceramic')">ceramic</button>
         </div>
       </div>
     </div>
@@ -114,10 +121,10 @@
       <button class="render-btn" id="render-btn" onclick="triggerRender()">Render</button>
     </div>
 
-    <div class="result-panel">
+    <div class="panel-section" id="result-section">
       <div class="section-label">Result</div>
       <div class="result-image-wrap">
-        <img id="result-image" alt="Render result">
+        <img id="result-img" src="" alt="Render result">
         <div class="result-placeholder" id="result-placeholder">Your render will appear here</div>
       </div>
       <div class="result-meta">
@@ -135,7 +142,7 @@
 
     <div class="panel-section">
       <div class="section-label">API Endpoint</div>
-      <input type="text" class="api-input" id="api-url" placeholder="http://103.196.86.97:5000" oninput="updateApiStatus()">
+      <input class="api-input" type="text" id="api-url" placeholder="http://103.196.86.97:5000" value="http://103.196.86.97:5000">
       <p class="api-note">Enter your RunPod Flask API URL. Start the server on your pod first.</p>
     </div>
 
