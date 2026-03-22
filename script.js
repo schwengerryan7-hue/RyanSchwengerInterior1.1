@@ -108,6 +108,12 @@ function showResult(imgUrl, prompt, time) {
   dl.href = imgUrl;
   dl.classList.add('visible');
 
+  // Feed compare slider if we have a previous render
+  const prevImg = document.getElementById('render-img').src;
+  if (prevImg && prevImg !== imgUrl && window.updateCompare) {
+    window.updateCompare(prevImg, imgUrl);
+  }
+
   addHistory(prompt, imgUrl, time);
   showToast(`Done in ${time}s`);
 }
