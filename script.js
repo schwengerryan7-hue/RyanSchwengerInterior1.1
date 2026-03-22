@@ -147,6 +147,7 @@ async function triggerRender() {
       body: JSON.stringify({ input: { prompt, model_base64 } })
     });
 
+    if (!submitRes.ok) { const errText = await submitRes.text(); throw new Error(`RunPod ${submitRes.status}: ${errText.slice(0,300)}`); }
     const job = await submitRes.json();
     const jobId = job.id;
     showToast('Job submitted — waiting for GPU...');
