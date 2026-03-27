@@ -2,6 +2,7 @@ const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
 const app = express();
+app.use(express.static(__dirname));
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
