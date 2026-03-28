@@ -404,7 +404,11 @@
       const plyB64 = await fileToBase64(plyFile);
                                                                                                                                                        
       meshDetail.textContent = 'Submitting to RunPod...';
-      const meshJobId = await submitJob({ type: 'mesh', ply_base64: plyB64 });                                                                         
+      const meshRes = await fetch(`${API_URL}/run-local-ply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({    
+  filename: plyFile.name }) });                                                                                                                        
+      if (!meshRes.ok) throw new Error(`Mesh submit failed: ${await meshRes.text()}`);                                                                 
+      const meshJob = await meshRes.json();                                                                                                            
+      const meshJobId = meshJob.id;                                                                         
                                                                                                                                                        
       meshDetail.textContent = 'Reconstructing surface...';                                                                                            
       const meshResult = await pollJob(meshJobId, barMesh, meshDetail, 'Reconstructing');                                                              
