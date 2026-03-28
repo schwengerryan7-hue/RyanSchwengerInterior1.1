@@ -38,5 +38,20 @@ app.get('/status/:id', async (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
+const fs = require('fs');                                                                                                                            
+  const path = require('path');                                                                                                                        
+                                                                                                                                                       
+  app.post('/run-local-ply', async (req, res) => {                                                                                                     
+    try {                                                                                                                                            
+      const { filename } = req.body;                                                                                                                   
+      const filePath = path.join(__dirname, filename);                                                                                                 
+      const plyB64 = fs.readFileSync(filePath).toString('base64');
+      const r = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {                                                                           
+        method: 'POST',                                                                                                                                
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },                                                  
+        body: JSON.stringify({ input: { type: 'mesh', ply_base64: plyB64 } })                                                                          
+      });                                                                                                                                              
+      res.json(await r.json());                                                                                                                      
+    } catch(e) { res.status(500).json({ error: e.message }); }                                                                                         
+  });                                               
 app.listen(3001, () => console.log('Proxy running on port 3001'));
