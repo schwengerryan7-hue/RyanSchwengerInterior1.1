@@ -144,11 +144,21 @@ if all_corners:
     cam.rotation_euler = rot_quat.to_euler()
     bpy.context.scene.camera = cam                                                                                                                   
                 
-bpy.ops.object.light_add(type="SUN", location=(5, -5, 10))                                                                                           
-bpy.context.object.data.energy = 3
-bpy.ops.object.light_add(type="AREA", location=(-3, 3, 5))                                                                                           
-bpy.context.object.data.energy = 800                                                                                                                 
-bpy.context.object.data.size = 6                                                                                                                     
+world = bpy.context.scene.world                                                                                                     
+  if not world:                                                                                                                       
+      world = bpy.data.worlds.new("World")
+      bpy.context.scene.world = world                                                                                                 
+  world.use_nodes = True                                                                                                              
+  bg = world.node_tree.nodes.get("Background")
+  if bg:                                                                                                                              
+      bg.inputs["Color"].default_value = (0.8, 0.8, 0.8, 1)
+      bg.inputs["Strength"].default_value = 1.5                                                                                       
+                                                                                                                                      
+  bpy.ops.object.light_add(type="SUN", location=(5, -5, 10))                                                                          
+  bpy.context.object.data.energy = 8                                                                                                  
+  bpy.ops.object.light_add(type="AREA", location=(-3, 3, 5))                                                                          
+  bpy.context.object.data.energy = 1200                                                                                               
+  bpy.context.object.data.size = 6  s                                                                                                                     
                                                                                                                                                      
 scene = bpy.context.scene                                                                                                                            
 scene.render.engine = "CYCLES"
