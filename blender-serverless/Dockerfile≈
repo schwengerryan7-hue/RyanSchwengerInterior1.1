@@ -8,10 +8,11 @@ FROM ubuntu:22.04
       libgl1 libglib2.0-0 libgomp1 \
       && rm -rf /var/lib/apt/lists/*
 
-  RUN pip3 install runpod==1.7.3 numpy open3d
+  RUN RUN pip3 install runpod==1.7.3 numpy open3d
 
   RUN blender --background --python-expr "import subprocess, sys; subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'numpy'])"
 
   COPY handler.py /handler.py
 
   CMD ["python3", "-u", "/handler.py"]
+
