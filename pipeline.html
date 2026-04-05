@@ -1,475 +1,889 @@
-  <!DOCTYPE html>                                                                                                                                      
-  <html lang="en">                                                                                                                                     
-  <head>                                                                                                                                               
-  <meta charset="UTF-8">                                                                                                                               
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">                                                                               
-  <title>Point Cloud Pipeline</title>                                                                                                                  
-  <style>                                                                                                                                              
-    * { box-sizing: border-box; margin: 0; padding: 0; }                                                                                               
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spatial AI — Point Cloud Pipeline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e10;
+      --surface: #18181b;
+      --border: #27272a;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --text: #f4f4f5;
+      --text-muted: #71717a;
+      --success: #22c55e;
+      --error: #ef4444;
+      --step-inactive: #27272a;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;                                                                          
-      background: #0f0f0f;                                                                                                                             
-      color: #e0e0e0;                                                                                                                                  
-      min-height: 100vh;                                                                                                                               
-      display: flex;                                                                                                                                   
-      flex-direction: column;                                                                                                                          
-      align-items: center;                                                                                                                             
-      padding: 40px 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
     }
-    h1 { font-size: 1.6rem; font-weight: 600; margin-bottom: 8px; }                                                                                    
-    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 40px; }                                                                                 
-                                                                                                                                                       
-    .card {                                                                                                                                            
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;                                                                                                                       
-      border-radius: 16px;
-      padding: 28px;
-      width: 100%;                                                                                                                                     
-      max-width: 620px;
-      margin-bottom: 20px;                                                                                                                             
-    }             
-    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 18px; color: #ccc; }
-                                                                                                                                                       
-    /* Upload zone */                                                                                                                                  
-    #drop-zone {                                                                                                                                       
-      border: 2px dashed #333;                                                                                                                         
-      border-radius: 12px;
-      padding: 40px 20px;
-      text-align: center;                                                                                                                              
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;                                                                                                  
-    }             
-    #drop-zone:hover, #drop-zone.drag { border-color: #888; background: #222; }
-    #drop-zone.loaded { border-color: #4ade80; border-style: solid; }                                                                                  
-    #drop-zone .icon { font-size: 2.5rem; margin-bottom: 10px; }                                                                                       
-    #drop-zone .label { color: #999; font-size: 0.9rem; }                                                                                              
-    #drop-zone .filename { color: #4ade80; font-size: 0.95rem; font-weight: 500; }                                                                     
-    #file-input { display: none; }                                                                                                                     
-                                                                                                                                                       
-    /* Material presets */
-    .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }                                                                        
-    .preset-btn {                                                                                                                                      
-      padding: 6px 14px;
-      border-radius: 20px;                                                                                                                             
-      border: 1px solid #333;                                                                                                                          
-      background: transparent;
-      color: #bbb;                                                                                                                                     
-      font-size: 0.82rem;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .preset-btn:hover { border-color: #666; color: #fff; }
-    .preset-btn.active { background: #fff; color: #000; border-color: #fff; }                                                                          
-   
-    textarea {                                                                                                                                         
-      width: 100%;
-      background: #111;
-      border: 1px solid #2a2a2a;
-      border-radius: 10px;
-      color: #e0e0e0;
-      font-size: 0.9rem;                                                                                                                               
-      padding: 12px 14px;
-      resize: none;                                                                                                                                    
-      height: 80px;
-      outline: none;                                                                                                                                   
-    }
-    textarea:focus { border-color: #444; }                                                                                                             
-                  
-    /* Pipeline button */
-    #run-btn {
-      width: 100%;
-      padding: 14px;
-      margin-top: 14px;
-      background: #fff;
-      color: #000;                                                                                                                                     
-      border: none;
-      border-radius: 10px;                                                                                                                             
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;                                                                                                                                 
-      transition: opacity 0.2s;
-    }                                                                                                                                                  
-    #run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    /* Steps progress */                                                                                                                               
-    .steps { display: flex; flex-direction: column; gap: 14px; }
-    .step {                                                                                                                                            
+    header {
       display: flex;
-      align-items: center;                                                                                                                             
-      gap: 14px;
-      opacity: 0.35;                                                                                                                                   
-      transition: opacity 0.3s;
-    }
-    .step.active { opacity: 1; }
-    .step.done { opacity: 0.6; }                                                                                                                       
-    .step-circle {
-      width: 32px; height: 32px;                                                                                                                       
-      border-radius: 50%;                                                                                                                              
-      border: 2px solid #444;
-      display: flex; align-items: center; justify-content: center;                                                                                     
-      font-size: 0.8rem;
-      font-weight: 700;                                                                                                                                
-      flex-shrink: 0;
-      transition: all 0.3s;                                                                                                                            
-    }                                                                                                                                                  
-    .step.active .step-circle { border-color: #facc15; color: #facc15; }
-    .step.done .step-circle { border-color: #4ade80; background: #4ade80; color: #000; }                                                               
-    .step-info { flex: 1; }                                                                                                                            
-    .step-title { font-size: 0.9rem; font-weight: 600; }                                                                                               
-    .step-detail { font-size: 0.78rem; color: #666; margin-top: 2px; }                                                                                 
-    .step.active .step-detail { color: #facc15; }                                                                                                      
-    .step.done .step-detail { color: #4ade80; }                                                                                                        
-                                                                                                                                                       
-    /* Progress bar */                                                                                                                                 
-    .progress-wrap {
-      height: 3px;                                                                                                                                     
-      background: #222;
-      border-radius: 99px;                                                                                                                             
-      margin-top: 8px;                                                                                                                                 
-      overflow: hidden;
-      display: none;                                                                                                                                   
-    }             
-    .step.active .progress-wrap { display: block; }
-    .progress-bar {                                                                                                                                    
-      height: 100%;
-      background: #facc15;                                                                                                                             
-      border-radius: 99px;                                                                                                                             
-      width: 0%;
-      transition: width 2s ease;                                                                                                                       
-    }             
-
-    /* Result */                                                                                                                                       
-    #result-card { display: none; }
-    #result-img {                                                                                                                                      
-      width: 100%;                                                                                                                                     
-      border-radius: 10px;
-      display: block;                                                                                                                                  
-    }             
-    .result-meta {
-      display: flex;                                                                                                                                   
+      align-items: center;
       justify-content: space-between;
-      margin-top: 12px;                                                                                                                                
-      font-size: 0.82rem;
-      color: #666;
-    }                                                                                                                                                  
-    #download-btn {
-      display: inline-block;                                                                                                                           
-      margin-top: 14px;
-      padding: 10px 20px;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 8px;                                                                                                                              
-      color: #e0e0e0;
-      text-decoration: none;                                                                                                                           
-      font-size: 0.85rem;
-      transition: border-color 0.2s;
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
     }
-    #download-btn:hover { border-color: #666; }
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.05em; color: var(--text); }
+    .conn-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--error); transition: background 0.3s; }
+    .conn-dot.connected { background: var(--success); }
 
-    /* Error */                                                                                                                                        
-    #error-box {
-      display: none;                                                                                                                                   
-      background: #1f0909;
-      border: 1px solid #7f1d1d;
-      border-radius: 10px;                                                                                                                             
-      padding: 14px;
-      font-size: 0.82rem;                                                                                                                              
-      color: #fca5a5;
-      white-space: pre-wrap;
-      word-break: break-all;
-      max-height: 200px;
-      overflow-y: auto;
-      margin-top: 14px;
-    }                                                                                                                                                  
-   
-    /* Connection dot */                                                                                                                               
-    .conn-row {   
-      display: flex; align-items: center; gap: 8px;
-      font-size: 0.78rem; color: #555; margin-bottom: 24px;
+    main { max-width: 1400px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 24px; }
+
+    .stage { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; transition: border-color 0.2s; }
+    .stage.active { border-color: var(--accent); }
+    .stage.disabled { opacity: 0.4; pointer-events: none; }
+
+    .stage-header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+    .stage-num {
+      width: 28px; height: 28px; border-radius: 50%; background: var(--step-inactive);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: var(--text-muted); flex-shrink: 0; transition: background 0.2s, color 0.2s;
     }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
-    .dot.connected { background: #4ade80; }
-  </style>                                                                                                                                             
-  </head>
-  <body>                                                                                                                                               
-                  
-  <h1>Point Cloud → Render</h1>
-  <p class="subtitle">Upload a .ply file, pick a material, get a photorealistic render</p>
-                                                                                                                                                       
-  <div class="conn-row">                                                                                                                               
-    <div class="dot" id="conn-dot"></div>                                                                                                              
-    <span id="conn-label">Checking connection...</span>                                                                                                
-  </div>                                                                                                                                               
-   
-  <!-- Step 1: Upload -->                                                                                                                              
-  <div class="card">
-    <h2>1 — Upload Point Cloud</h2>
-    <div id="drop-zone">                                                                                                                               
-      <div class="icon">☁️ </div>
-      <div class="label" id="drop-label">Drop your <strong>.ply</strong> file here or click to browse</div>                                            
-      <input type="file" id="file-input" accept=".ply">                                                                                                
-    </div>                                                                                                                                             
-  </div>                                                                                                                                               
-                  
-  <!-- Step 2: Material -->                                                                                                                            
-  <div class="card">
-    <h2>2 — Choose Material</h2>                                                                                                                       
-    <div class="presets">
-      <button class="preset-btn" data-prompt="chrome metal finish">Chrome</button>
-      <button class="preset-btn" data-prompt="brushed steel metal">Steel</button>                                                                      
-      <button class="preset-btn" data-prompt="warm oak wood">Oak Wood</button>                                                                         
-      <button class="preset-btn" data-prompt="dark walnut wood">Walnut</button>                                                                        
-      <button class="preset-btn" data-prompt="white linen fabric">Linen</button>                                                                       
-      <button class="preset-btn" data-prompt="leather upholstery dark brown">Leather</button>                                                          
-      <button class="preset-btn" data-prompt="white marble smooth">Marble</button>                                                                     
-      <button class="preset-btn" data-prompt="matte terracotta clay">Terracotta</button>                                                               
-    </div>                                                                                                                                             
-    <textarea id="prompt-input" placeholder="Describe the material (e.g. brushed gold metal, rough concrete)"></textarea>
-    <button id="run-btn">Run Pipeline</button>                                                                                                         
-    <div id="error-box"></div>
-  </div>                                                                                                                                               
-                  
-  <!-- Progress -->
-  <div class="card" id="progress-card" style="display:none">
-    <h2>Pipeline Progress</h2>
-    <div class="steps">
-      <div class="step" id="step-mesh">
-        <div class="step-circle">1</div>
-        <div class="step-info">                                                                                                                        
-          <div class="step-title">Mesh Reconstruction</div>
-          <div class="step-detail" id="step-mesh-detail">PLY → Poisson surface → GLB</div>                                                             
-          <div class="progress-wrap"><div class="progress-bar" id="bar-mesh"></div></div>                                                              
-        </div>                                                                                                                                         
-      </div>                                                                                                                                           
-      <div class="step" id="step-render">                                                                                                              
-        <div class="step-circle">✓</div>
-        <div class="step-info">
-          <div class="step-title">Blender Render</div>
-          <div class="step-detail" id="step-render-detail">GLB + material → Cycles PNG</div>
-          <div class="progress-wrap"><div class="progress-bar" id="bar-render"></div></div>                                                            
+    .stage.active .stage-num { background: var(--accent); color: #fff; }
+    .stage.done .stage-num { background: var(--success); color: #fff; }
+    .stage-title { font-size: 14px; font-weight: 600; }
+    .stage-subtitle { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+    .stage-body { display: grid; grid-template-columns: 280px 1fr; min-height: 320px; }
+
+    .controls { padding: 24px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 16px; }
+
+    .viewer { position: relative; background: #0a0a0c; }
+    .viewer canvas { display: block; width: 100% !important; height: 100% !important; }
+    .viewer-placeholder {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); font-size: 13px;
+    }
+    .viewer-placeholder .icon { font-size: 32px; opacity: 0.3; }
+
+    .upload-zone {
+      border: 2px dashed var(--border); border-radius: 8px; padding: 24px 16px;
+      text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+      font-size: 13px; color: var(--text-muted);
+    }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+    .upload-zone.has-file { border-color: var(--success); border-style: solid; }
+    .upload-zone .upload-icon { font-size: 24px; margin-bottom: 8px; display: block; }
+
+    .btn { padding: 10px 20px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s, opacity 0.2s; width: 100%; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+    .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+    .preset-chip {
+      padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; transition: all 0.15s;
+    }
+    .preset-chip:hover { border-color: var(--accent); color: var(--accent); }
+    .preset-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .progress-wrap { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s ease; }
+
+    .status-text { font-size: 11px; color: var(--text-muted); min-height: 16px; }
+
+    .result-img { width: 100%; height: 100%; object-fit: contain; display: none; }
+    .result-img.visible { display: block; }
+
+    .download-btn {
+      display: none; padding: 8px 16px; border-radius: 6px; background: var(--surface);
+      border: 1px solid var(--border); color: var(--text); font-size: 12px; text-decoration: none; text-align: center;
+    }
+    .download-btn.visible { display: block; }
+    .download-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    #toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px 20px; border-radius: 8px; font-size: 13px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+      white-space: nowrap; z-index: 1000;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .info-badge {
+      font-size: 11px; color: var(--text-muted); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; display: none;
+    }
+    .info-badge.visible { display: block; }
+
+    .radius-row { display: flex; align-items: center; gap: 8px; }
+    .radius-row input[type=range] { flex: 1; accent-color: var(--accent); }
+    .radius-val { font-size: 11px; color: var(--text-muted); min-width: 32px; text-align: right; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SPATIAL AI — POINT CLOUD PIPELINE</h1>
+  <div class="conn-badge">
+    <span class="conn-dot" id="conn-dot"></span>
+    <span id="conn-label">Checking...</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- STAGE 1: Upload PLY -->
+  <div class="stage active" id="stage-1">
+    <div class="stage-header">
+      <div class="stage-num">1</div>
+      <div><div class="stage-title">Upload Point Cloud</div></div>
+      <div class="stage-subtitle" id="s1-subtitle">Upload a .ply file to begin</div>
+    </div>
+    <div class="stage-body">
+      <div class="controls">
+        <div>
+          <label>Point Cloud File</label>
+          <div style="margin-top: 8px;">
+            <div class="upload-zone" id="upload-zone">
+              <span class="upload-icon">☁</span>
+              <div>Drop .ply file here</div>
+              <div style="margin-top:4px;font-size:11px;">or click to browse</div>
+            </div>
+            <input type="file" id="file-input" accept=".ply" style="display:none">
+          </div>
         </div>
-      </div>                                                                                                                                           
-    </div>        
+        <div class="info-badge" id="point-info"></div>
+        <button class="btn btn-primary" id="btn-next-1" disabled>Continue to Mesh →</button>
+      </div>
+      <div class="viewer" id="viewer-pointcloud">
+        <div class="viewer-placeholder" id="placeholder-1">
+          <div class="icon">⬡</div>
+          <div>Point cloud will appear here</div>
+        </div>
+      </div>
+    </div>
   </div>
-                                                                                                                                                       
-  <!-- Result -->
-  <div class="card" id="result-card">                                                                                                                  
-    <h2>Result</h2>
-    <img id="result-img" alt="Render output">
-    <div class="result-meta">                                                                                                                          
-      <span id="result-prompt"></span>
-      <span id="result-time"></span>                                                                                                                   
-    </div>        
-    <a id="download-btn" download="render.png">Download PNG</a>                                                                                        
+
+  <!-- STAGE 2: Browser Mesh -->
+  <div class="stage disabled" id="stage-2">
+    <div class="stage-header">
+      <div class="stage-num">2</div>
+      <div><div class="stage-title">Reconstruct Mesh</div></div>
+      <div class="stage-subtitle" id="s2-subtitle">Voxel Mesh — runs in browser, no server needed</div>
+    </div>
+    <div class="stage-body">
+      <div class="controls">
+        <div>
+          <label>Point Sensitivity</label>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.6;">
+            How far the mesh expands around each point. Low = sharp & tight. High = fills gaps but puffier.
+          </div>
+          <div class="radius-row" style="margin-top:10px;">
+            <input type="range" id="fill-slider" min="0.8" max="2.5" step="0.1" value="1.2">
+            <span class="radius-val" id="fill-val">1.1</span>
+          </div>
+        </div>
+        <div>
+          <label>Voxel Resolution</label>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.6;">
+            Grid density. Higher = more triangles & detail. 60 recommended for Blender.
+          </div>
+          <div class="radius-row" style="margin-top:10px;">
+            <input type="range" id="detail-slider" min="15" max="80" step="1" value="60">
+            <span class="radius-val" id="detail-val">30</span>
+          </div>
+        </div>
+        <div>
+          <label>Smoothing Passes</label>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.6;">
+            Rounds voxel edges. More = smoother but less defined.
+          </div>
+          <div class="radius-row" style="margin-top:10px;">
+            <input type="range" id="iter-slider" min="0" max="20" step="1" value="5">
+            <span class="radius-val" id="iter-val">8</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <input type="checkbox" id="seal-bottom" checked style="accent-color:var(--accent);width:14px;height:14px;cursor:pointer;">
+          <label style="text-transform:none;letter-spacing:0;font-size:12px;color:var(--text-muted);cursor:pointer;" for="seal-bottom">Seal bottom (closes underside for Blender)</label>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" id="mesh-progress"></div></div>
+        <div class="status-text" id="mesh-status"></div>
+        <button class="btn btn-primary" id="btn-mesh">Reconstruct Mesh</button>
+        <button class="btn btn-secondary" id="btn-next-2" disabled>Continue to Render →</button>
+      </div>
+      <div class="viewer" id="viewer-mesh">
+        <div class="viewer-placeholder" id="placeholder-2">
+          <div class="icon">◈</div>
+          <div>Mesh will appear here after reconstruction</div>
+        </div>
+      </div>
+    </div>
   </div>
-                                                                                                                                                       
-  <script>        
-  const API_URL = 'https://cautious-journey-69jrr96g77642rpq4-3001.app.github.dev';                                                                    
-  const RUNPOD_API_KEY = 'YOUR_NEW_KEY_HERE';                                                                                                          
-   
-  let plyFile = null;                                                                                                                                  
-                  
-  // ── Connection check ──                                                                                                                            
-  async function checkConnection() {
-    try {                                                                                                                                              
-      const res = await fetch(`${API_URL}/health`);
-      if (res.ok) {                                                                                                                                    
-        document.getElementById('conn-dot').classList.add('connected');
-        document.getElementById('conn-label').textContent = 'Proxy connected';                                                                         
-      } else {                                                                                                                                         
-        document.getElementById('conn-label').textContent = 'Proxy error';
-      }                                                                                                                                                
-    } catch {     
-      document.getElementById('conn-label').textContent = 'Not connected — is proxy running?';
-    }                                                                                                                                                  
+
+  <!-- STAGE 3: Render -->
+  <div class="stage disabled" id="stage-3">
+    <div class="stage-header">
+      <div class="stage-num">3</div>
+      <div><div class="stage-title">Apply Material & Render</div></div>
+      <div class="stage-subtitle">Blender Cycles photorealistic render</div>
+    </div>
+    <div class="stage-body">
+      <div class="controls">
+        <div>
+          <label>Material Preset</label>
+          <div class="presets" style="margin-top:8px;" id="presets">
+            <button class="preset-chip" data-prompt="polished chrome metal material, reflective, studio lighting">Chrome</button>
+            <button class="preset-chip" data-prompt="natural oak wood material, warm grain, matte finish">Oak Wood</button>
+            <button class="preset-chip" data-prompt="soft grey fabric upholstery, woven texture, matte">Fabric</button>
+            <button class="preset-chip" data-prompt="white marble material, subtle veining, polished">Marble</button>
+            <button class="preset-chip" data-prompt="matte black powder coated metal">Matte Black</button>
+            <button class="preset-chip" data-prompt="warm walnut wood, dark grain, satin finish">Walnut</button>
+            <button class="preset-chip" data-prompt="brushed stainless steel, satin finish">Steel</button>
+            <button class="preset-chip" data-prompt="terracotta clay, unglazed, matte earthy tone">Terracotta</button>
+          </div>
+        </div>
+        <div>
+          <label>Custom Prompt</label>
+          <textarea id="prompt-input" rows="3" style="
+            margin-top:8px; width:100%; background:var(--bg);
+            border:1px solid var(--border); border-radius:6px;
+            color:var(--text); font-size:12px; padding:8px;
+            resize:none; outline:none; font-family:inherit;
+          " placeholder="Describe the material..."></textarea>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" id="render-progress"></div></div>
+        <div class="status-text" id="render-status"></div>
+        <button class="btn btn-primary" id="btn-render">Render with Blender</button>
+      </div>
+      <div class="viewer" id="viewer-result">
+        <div class="viewer-placeholder" id="placeholder-3">
+          <div class="icon">✦</div>
+          <div>Photorealistic render will appear here</div>
+        </div>
+        <img class="result-img" id="result-img" alt="Render result">
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 4: Result -->
+  <div class="stage disabled" id="stage-4">
+    <div class="stage-header">
+      <div class="stage-num">4</div>
+      <div><div class="stage-title">Result</div></div>
+      <div class="stage-subtitle" id="s4-subtitle">—</div>
+    </div>
+    <div class="stage-body" style="grid-template-columns: 280px 1fr;">
+      <div class="controls">
+        <div class="status-text" id="result-info"></div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn btn-secondary" id="tab-render" style="flex:1;padding:7px;" onclick="switchTab('render')">Render</button>
+          <button class="btn btn-secondary" id="tab-3d" style="flex:1;padding:7px;" onclick="switchTab('3d')">3D View</button>
+        </div>
+        <a class="download-btn" id="download-gif-btn" download="render.gif">⬇ Download GIF</a>
+        <a class="download-btn" id="download-glb-btn" download="model.glb" style="margin-top:6px;">⬇ Download GLB</a>
+        <button class="btn btn-secondary" id="btn-restart" style="margin-top:auto;">↺ Start Over</button>
+      </div>
+      <div class="viewer" style="min-height:400px;" id="s4-viewer">
+        <div class="viewer-placeholder" id="placeholder-4">
+          <div class="icon">✦</div>
+          <div>Final render will appear here</div>
+        </div>
+        <img class="result-img" id="final-img" alt="Final render">
+        <div id="viewer-3d" style="width:100%;height:100%;min-height:400px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
   }
-                                                                                                                                                       
-  // ── File upload ──
-  const dropZone = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('file-input');                                                                                             
-   
-  dropZone.addEventListener('click', () => fileInput.click());                                                                                         
-  fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });                                                 
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));                                                                     
-  dropZone.addEventListener('drop', e => {                                                                                                             
-    e.preventDefault();                                                                                                                                
-    dropZone.classList.remove('drag');
-    const f = e.dataTransfer.files[0];                                                                                                                 
-    if (f && f.name.endsWith('.ply')) loadFile(f);
-  });                                                                                                                                                  
-   
-  function loadFile(file) {                                                                                                                            
-    if (!file || !file.name.endsWith('.ply')) return;
-    plyFile = file;                                                                                                                                    
-    dropZone.classList.add('loaded');
-    document.getElementById('drop-label').innerHTML =                                                                                                  
-      `<span class="filename">✓ ${file.name}</span><br><span style="color:#555;font-size:0.8rem">Click to change</span>`;
-  }                                                                                                                                                    
-                  
-  // ── Preset chips ──                                                                                                                                
-  document.querySelectorAll('.preset-btn').forEach(btn => {
-    btn.addEventListener('click', () => {                                                                                                              
-      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');                                                                                                                     
-      document.getElementById('prompt-input').value = btn.dataset.prompt;                                                                              
-    });
-  });                                                                                                                                                  
-                  
-  // ── File → base64 ──                                                                                                                               
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {                                                                                                          
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;                                                                                                                         
-      reader.readAsDataURL(file);
-    });                                                                                                                                                
-  }               
+}
+</script>
 
-  // ── Poll job until complete ──                                                                                                                     
-  async function pollJob(jobId, barEl, detailEl, labelPrefix) {
-    const start = Date.now();                                                                                                                          
-    let pct = 10; 
-    barEl.style.width = pct + '%';                                                                                                                     
-                  
-    while (true) {
-      await new Promise(r => setTimeout(r, 3000));
-      const res = await fetch(`${API_URL}/status/${jobId}`, {                                                                                          
-        headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
-      });                                                                                                                                              
-      const data = await res.json();
-      const elapsed = Math.round((Date.now() - start) / 1000);                                                                                         
-      detailEl.textContent = `${labelPrefix} — ${elapsed}s`;
-                                                                                                                                                       
-      pct = Math.min(pct + 12, 90);                                                                                                                    
-      barEl.style.width = pct + '%';                                                                                                                   
-                                                                                                                                                       
-      if (data.status === 'COMPLETED') {
-        barEl.style.width = '100%';
-        return data.output;                                                                                                                            
-      }
-      if (data.status === 'FAILED') {                                                                                                                  
-        throw new Error('Job failed: ' + JSON.stringify(data).slice(0, 500));
-      }                                                                                                                                                
-    }
-  }                                                                                                                                                    
-                  
-  // ── Submit job ──
-  async function submitJob(payload) {
-    const res = await fetch(`${API_URL}/run`, {                                                                                                        
-      method: 'POST',
-      headers: {                                                                                                                                       
-        'Content-Type': 'application/json',                                                                                                            
-        'Authorization': `Bearer ${RUNPOD_API_KEY}`
-      },                                                                                                                                               
-      body: JSON.stringify({ input: payload })
-    });
-    if (!res.ok) throw new Error(`Submit failed ${res.status}: ${await res.text()}`);
-    const data = await res.json();                                                                                                                     
-    if (!data.id) throw new Error('No job ID returned: ' + JSON.stringify(data));                                                                      
-    return data.id;                                                                                                                                    
-  }                                                                                                                                                    
-                  
-  // ── Main pipeline ──                                                                                                                               
-  document.getElementById('run-btn').addEventListener('click', async () => {
-    const prompt = document.getElementById('prompt-input').value.trim();
-    if (!plyFile) { showError('Please upload a .ply file first.'); return; }                                                                           
-    if (!prompt) { showError('Please enter a material description.'); return; }                                                                        
-                                                                                                                                                       
-    const btn = document.getElementById('run-btn');                                                                                                    
-    btn.disabled = true;
-    btn.textContent = 'Running...';                                                                                                                    
-    hideError();
-                                                                                                                                                       
-    const totalStart = Date.now();
+<script type="module">
+import * as THREE from 'three';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
-    document.getElementById('progress-card').style.display = 'block';                                                                                  
-    document.getElementById('result-card').style.display = 'none';
-                                                                                                                                                       
-    const stepMesh = document.getElementById('step-mesh');                                                                                             
-    const stepRender = document.getElementById('step-render');
-    const meshDetail = document.getElementById('step-mesh-detail');                                                                                    
-    const renderDetail = document.getElementById('step-render-detail');
-    const barMesh = document.getElementById('bar-mesh');                                                                                               
-    const barRender = document.getElementById('bar-render');
-                                                                                                                                                       
-    // Reset steps
-    stepMesh.className = 'step';
-    stepRender.className = 'step';                                                                                                                     
-   
-    try {                                                                                                                                              
-      // ── Step 1: Mesh ──
-      stepMesh.classList.add('active');
-      meshDetail.textContent = 'Reading file...';
-      const plyB64 = await fileToBase64(plyFile);
-                                                                                                                                                       
-      meshDetail.textContent = 'Submitting to RunPod...';
-      const meshRes = await fetch(`${API_URL}/run-local-ply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({    
-  filename: plyFile.name }) });                                                                                                                        
-      if (!meshRes.ok) throw new Error(`Mesh submit failed: ${await meshRes.text()}`);                                                                 
-      const meshJob = await meshRes.json();                                                                                                            
-      const meshJobId = meshJob.id;                                                                         
-                                                                                                                                                       
-      meshDetail.textContent = 'Reconstructing surface...';                                                                                            
-      const meshResult = await pollJob(meshJobId, barMesh, meshDetail, 'Reconstructing');                                                              
-                                                                                                                                                       
-      if (!meshResult || meshResult.status === 'error') {
-        throw new Error('Mesh failed: ' + (meshResult?.log || 'unknown'));                                                                             
-      }                                                                                                                                                
-      const meshB64 = meshResult.mesh_base64;
-      stepMesh.classList.remove('active');                                                                                                             
-      stepMesh.classList.add('done');
-      stepMesh.querySelector('.step-circle').textContent = '✓';                                                                                        
-      meshDetail.textContent = 'Mesh ready ✓';
-                                                                                                                                                       
-      // ── Step 2: Render ──
-      stepRender.classList.add('active');                                                                                                              
-      renderDetail.textContent = 'Submitting render job...';
-      const renderJobId = await submitJob({ type: 'render', model_base64: meshB64, prompt });                                                          
-   
-      renderDetail.textContent = 'Rendering with Cycles...';                                                                                           
-      const renderResult = await pollJob(renderJobId, barRender, renderDetail, 'Rendering');
-                                                                                                                                                       
-      if (!renderResult || renderResult.status === 'error') {                                                                                          
-        throw new Error('Render failed: ' + (renderResult?.log || 'unknown'));
-      }                                                                                                                                                
-                  
-      stepRender.classList.remove('active');
-      stepRender.classList.add('done');
-      stepRender.querySelector('.step-circle').textContent = '✓';                                                                                      
-   
-      const totalTime = ((Date.now() - totalStart) / 1000).toFixed(1);                                                                                 
-      renderDetail.textContent = `Done in ${totalTime}s ✓`;
-                                                                                                                                                       
-      // ── Show result ──
-      const imgUrl = `data:image/png;base64,${renderResult.image_base64}`;
-      document.getElementById('result-img').src = imgUrl;                                                                                              
-      document.getElementById('result-prompt').textContent = prompt;                                                                                   
-      document.getElementById('result-time').textContent = `${totalTime}s total`;                                                                      
-      const dl = document.getElementById('download-btn');                                                                                              
-      dl.href = imgUrl;                                                                                                                                
-      dl.download = `render_${prompt.replace(/\s+/g, '_').slice(0, 30)}.png`;
-      document.getElementById('result-card').style.display = 'block';                                                                                  
-                  
-    } catch (err) {                                                                                                                                    
-      showError(err.message);
-      console.error(err);                                                                                                                              
-    } finally {
-      btn.disabled = false;                                                                                                                            
-      btn.textContent = 'Run Pipeline';
+// ── Config ──
+const API_URL        = 'http://localhost:3001';
+
+// ── State ──
+let plyGeometry    = null;
+let plyFile        = null;
+let meshBase64     = null;
+let resultGlbBase64 = null;
+let s4Scene        = null;
+
+// ── Three.js scenes ──
+function makeScene(containerId) {
+  const container = document.getElementById(containerId);
+  const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene  = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a0c);
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+  camera.position.set(0, 0.5, 2);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping  = true;
+  controls.dampingFactor  = 0.05;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(2, 4, 2);
+  scene.add(dir);
+  scene.add(new THREE.GridHelper(4, 20, 0x222222, 0x1a1a1a));
+
+  function resize() {
+    const w = container.clientWidth;
+    const h = container.clientHeight || 320;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  container.appendChild(renderer.domElement);
+  resize();
+  window.addEventListener('resize', resize);
+
+  (function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+
+  return { scene, camera, controls };
+}
+
+const pcScene  = makeScene('viewer-pointcloud');
+const mshScene = makeScene('viewer-mesh');
+
+// ── Helpers ──
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function setStage(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`stage-${i}`);
+    el.classList.remove('active', 'disabled', 'done');
+    if (i < n)      el.classList.add('done');
+    else if (i === n) el.classList.add('active');
+    else            el.classList.add('disabled');
+  }
+}
+
+function fitCamera(camera, controls, object) {
+  const box    = new THREE.Box3().setFromObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+  const size   = box.getSize(new THREE.Vector3());
+  const d      = Math.max(size.x, size.y, size.z);
+  camera.position.set(center.x + d * 0.6, center.y + d * 0.3, center.z + d * 1.8);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function setProgress(id, pct) { document.getElementById(id).style.width = pct + '%'; }
+function setStatus(id, msg)   { document.getElementById(id).textContent = msg; }
+
+// ── Stage 1: Upload PLY ──
+const uploadZone = document.getElementById('upload-zone');
+const fileInput  = document.getElementById('file-input');
+
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadPLY(e.target.files[0]); });
+uploadZone.addEventListener('dragover',  e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.toLowerCase().endsWith('.ply')) loadPLY(f);
+  else showToast('Please drop a .ply file');
+});
+
+function loadPLY(file) {
+  plyFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const loader    = new PLYLoader();
+    const geometry  = loader.parse(e.target.result);
+    geometry.computeBoundingBox();
+    plyGeometry = geometry;
+
+    const pointCount = geometry.attributes.position.count;
+
+    pcScene.scene.children.filter(c => c.isPoints || c.isMesh).forEach(c => pcScene.scene.remove(c));
+
+    const mat  = new THREE.PointsMaterial({ size: 0.008, color: 0x6366f1, sizeAttenuation: true });
+    if (geometry.attributes.color) mat.vertexColors = true;
+
+    const pts = new THREE.Points(geometry, mat);
+    pcScene.scene.add(pts);
+    fitCamera(pcScene.camera, pcScene.controls, pts);
+
+    document.getElementById('placeholder-1').style.display = 'none';
+    uploadZone.classList.add('has-file');
+    uploadZone.innerHTML = `<span class="upload-icon">✓</span><strong>${file.name}</strong><div style="margin-top:4px;font-size:11px;">Click to change</div>`;
+
+    const info = document.getElementById('point-info');
+    info.textContent = `${pointCount.toLocaleString()} points`;
+    info.classList.add('visible');
+
+    document.getElementById('s1-subtitle').textContent = `${pointCount.toLocaleString()} points loaded`;
+    document.getElementById('btn-next-1').disabled = false;
+    showToast(`Loaded ${pointCount.toLocaleString()} points`);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('btn-next-1').addEventListener('click', () => setStage(2));
+
+// ── Sliders ──
+document.getElementById('fill-slider').addEventListener('input', e => {
+  document.getElementById('fill-val').textContent = parseFloat(e.target.value).toFixed(1);
+});
+document.getElementById('detail-slider').addEventListener('input', e => {
+  document.getElementById('detail-val').textContent = e.target.value;
+});
+document.getElementById('iter-slider').addEventListener('input', e => {
+  document.getElementById('iter-val').textContent = e.target.value;
+});
+
+// ── Voxel Mesh Reconstruction ──
+
+function buildAdjacency(indices, vertCount) {
+  const adj = Array.from({ length: vertCount }, () => []);
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i], b = indices[i+1], c = indices[i+2];
+    adj[a].push(b, c);
+    adj[b].push(a, c);
+    adj[c].push(a, b);
+  }
+  return adj.map(nbrs => [...new Set(nbrs)]);
+}
+
+function voxelizeMesh(geometry, resolution, smoothPasses, fillR, sealBottom = true) {
+  // Extract point cloud
+  const pos = geometry.attributes.position;
+  const pts = [];
+  for (let i = 0; i < pos.count; i++) {
+    pts.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
+  }
+
+  // Bounding box with small padding
+  let mnX=Infinity,mnY=Infinity,mnZ=Infinity,mxX=-Infinity,mxY=-Infinity,mxZ=-Infinity;
+  pts.forEach(([x,y,z]) => {
+    if(x<mnX)mnX=x; if(x>mxX)mxX=x;
+    if(y<mnY)mnY=y; if(y>mxY)mxY=y;
+    if(z<mnZ)mnZ=z; if(z>mxZ)mxZ=z;
+  });
+  const W=resolution, H=resolution, D=resolution;
+  const pad=0.05;
+  mnX-=pad; mnY-=pad; mnZ-=pad; mxX+=pad; mxY+=pad; mxZ+=pad;
+  const cX=(mxX-mnX)/W, cY=(mxY-mnY)/H, cZ=(mxZ-mnZ)/D;
+  // fillR passed in from slider
+
+  // Occupancy grid (padded by 1 on each side)
+  const PW=W+2, PH=H+2;
+  const grid = new Uint8Array((W+2)*(H+2)*(D+2));
+  const gI = (x,y,z) => (x+1)+(y+1)*PW+(z+1)*PW*PH;
+
+  pts.forEach(([px,py,pz]) => {
+    const vcx=(px-mnX)/cX, vcy=(py-mnY)/cY, vcz=(pz-mnZ)/cZ;
+    const r=Math.ceil(fillR)+1;
+    const x0=Math.max(0,Math.floor(vcx-r)), x1=Math.min(W-1,Math.ceil(vcx+r));
+    const y0=Math.max(0,Math.floor(vcy-r)), y1=Math.min(H-1,Math.ceil(vcy+r));
+    const z0=Math.max(0,Math.floor(vcz-r)), z1=Math.min(D-1,Math.ceil(vcz+r));
+    for(let x=x0;x<=x1;x++) for(let y=y0;y<=y1;y++) for(let z=z0;z<=z1;z++) {
+      const dx=x+.5-vcx, dy=y+.5-vcy, dz=z+.5-vcz;
+      if(dx*dx+dy*dy+dz*dz <= fillR*fillR) grid[gI(x,y,z)]=1;
     }
   });
-                                                                                                                                                       
-  function showError(msg) {
-    const box = document.getElementById('error-box');                                                                                                  
-    box.style.display = 'block';
-    box.textContent = msg;
-  }                                                                                                                                                    
-  function hideError() {
-    document.getElementById('error-box').style.display = 'none';                                                                                       
-  }               
 
-  checkConnection();                                                                                                                                   
-  </script>
-  </body>                                                                                                                                              
-  </html>  
+  // Bridge-gaps pass: fill any empty voxel that has occupied neighbors on both
+  // sides of the same axis — this connects thin regions (like the chair's central pole)
+  // without inflating the overall mesh
+  const bridged = new Uint8Array(grid.length);
+  bridged.set(grid);
+  for (let x=0;x<W;x++) for (let y=0;y<H;y++) for (let z=0;z<D;z++) {
+    if (grid[gI(x,y,z)]) continue;
+    const nX = (x>0&&grid[gI(x-1,y,z)]) && (x<W-1&&grid[gI(x+1,y,z)]);
+    const nY = (y>0&&grid[gI(x,y-1,z)]) && (y<H-1&&grid[gI(x,y+1,z)]);
+    const nZ = (z>0&&grid[gI(x,y,z-1)]) && (z<D-1&&grid[gI(x,y,z+1)]);
+    if (nX || nY || nZ) bridged[gI(x,y,z)] = 1;
+  }
+  grid.set(bridged);
+
+  // Seal bottom: extend 2 voxels below the lowest occupied voxel in each XZ column
+  // so the underside is fully closed for Blender rendering
+  if (sealBottom) {
+    for (let x = 0; x < W; x++) {
+      for (let z = 0; z < D; z++) {
+        for (let y = 0; y < H; y++) {
+          if (grid[gI(x, y, z)]) {
+            if (y > 0) grid[gI(x, y-1, z)] = 1;
+            if (y > 1) grid[gI(x, y-2, z)] = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Surface extraction: emit a quad for each exposed voxel face
+  const DIRS = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
+  const FACES = [
+    [[-1,-1,-1],[-1,1,-1],[-1,1,1],[-1,-1,1]],
+    [[ 1,-1, 1],[ 1,1, 1],[ 1,1,-1],[ 1,-1,-1]],
+    [[-1,-1,-1],[-1,-1,1],[ 1,-1,1],[ 1,-1,-1]],
+    [[-1, 1, 1],[-1,1,-1],[ 1,1,-1],[ 1, 1, 1]],
+    [[ 1,-1,-1],[ 1,1,-1],[-1,1,-1],[-1,-1,-1]],
+    [[-1,-1, 1],[-1,1, 1],[ 1,1, 1],[ 1,-1, 1]],
+  ];
+
+  const rawVerts = [];
+  for(let x=0;x<W;x++) for(let y=0;y<H;y++) for(let z=0;z<D;z++) {
+    if(!grid[gI(x,y,z)]) continue;
+    const wx=mnX+(x+.5)*cX, wy=mnY+(y+.5)*cY, wz=mnZ+(z+.5)*cZ;
+    DIRS.forEach(([dx,dy,dz], fi) => {
+      const nx=x+dx, ny=y+dy, nz=z+dz;
+      const empty=(nx<0||ny<0||nz<0||nx>=W||ny>=H||nz>=D)||!grid[gI(nx,ny,nz)];
+      if(!empty) return;
+      const fv=FACES[fi];
+      const c=fv.map(([fx,fy,fz])=>[wx+fx*cX*.5, wy+fy*cY*.5, wz+fz*cZ*.5]);
+      rawVerts.push(...c[0],...c[1],...c[2], ...c[0],...c[2],...c[3]);
+    });
+  }
+
+  // Weld shared vertices for smoothing to work across the whole mesh
+  let geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rawVerts), 3));
+  geo = mergeVertices(geo, 1e-5);
+
+  // Laplacian smoothing to round off the blocky voxel edges
+  if (smoothPasses > 0) {
+    const pa  = geo.attributes.position;
+    const idxA = Array.from(geo.index.array);
+    const vC  = pa.count;
+    const adj = buildAdjacency(idxA, vC);
+    const sv  = [];
+    for(let i=0;i<vC;i++) sv.push(new THREE.Vector3(pa.getX(i),pa.getY(i),pa.getZ(i)));
+
+    for(let iter=0;iter<smoothPasses;iter++) {
+      const tmp = sv.map((v,i) => {
+        if(!adj[i].length) return v.clone();
+        const avg = new THREE.Vector3();
+        adj[i].forEach(j => avg.add(sv[j]));
+        avg.divideScalar(adj[i].length);
+        return v.clone().lerp(avg, 0.5);
+      });
+      tmp.forEach((v,i) => sv[i].copy(v));
+    }
+    const pa2 = new Float32Array(vC*3);
+    sv.forEach((v,i)=>{ pa2[i*3]=v.x; pa2[i*3+1]=v.y; pa2[i*3+2]=v.z; });
+    geo.setAttribute('position', new THREE.BufferAttribute(pa2, 3));
+  }
+
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// ── Stage 2: Mesh button ──
+document.getElementById('btn-mesh').addEventListener('click', async () => {
+  if (!plyGeometry) return;
+
+  const btn = document.getElementById('btn-mesh');
+  btn.disabled    = true;
+  btn.textContent = 'Voxelizing...';
+  setProgress('mesh-progress', 10);
+  setStatus('mesh-status', 'Building voxel grid...');
+
+  await new Promise(r => setTimeout(r, 30));
+
+  try {
+    const fillR       = parseFloat(document.getElementById('fill-slider').value);
+    const resolution  = parseInt(document.getElementById('detail-slider').value);
+    const smoothPasses = parseInt(document.getElementById('iter-slider').value);
+    const sealBottom  = document.getElementById('seal-bottom').checked;
+    setProgress('mesh-progress', 20);
+    setStatus('mesh-status', 'Voxelizing point cloud...');
+
+    await new Promise(r => setTimeout(r, 30));
+    const meshGeo = voxelizeMesh(plyGeometry, resolution, smoothPasses, fillR, sealBottom);
+
+    setProgress('mesh-progress', 70);
+    setStatus('mesh-status', 'Building mesh...');
+
+    // Display in viewer
+    mshScene.scene.children.filter(c => c.isMesh).forEach(c => mshScene.scene.remove(c));
+
+    const mesh = new THREE.Mesh(meshGeo, new THREE.MeshStandardMaterial({
+      color: 0x888888, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide
+    }));
+    mshScene.scene.add(mesh);
+    fitCamera(mshScene.camera, mshScene.controls, mesh);
+    document.getElementById('placeholder-2').style.display = 'none';
+
+    setProgress('mesh-progress', 85);
+    setStatus('mesh-status', 'Exporting GLB...');
+
+    // Export to GLB for RunPod render
+    meshBase64 = await exportGLB(mesh);
+
+    setProgress('mesh-progress', 100);
+    setStatus('mesh-status', `Done — ${meshGeo.index.count / 3} triangles`);
+    document.getElementById('btn-next-2').disabled = false;
+    document.getElementById('s2-subtitle').textContent = 'Mesh ready';
+    showToast('Mesh wrapped in browser');
+
+  } catch (err) {
+    setStatus('mesh-status', 'Error: ' + err.message);
+    showToast('Mesh error: ' + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Reconstruct Mesh';
+  }
+});
+
+function exportGLB(mesh) {
+  return new Promise((resolve, reject) => {
+    const exporter = new GLTFExporter();
+    exporter.parse(mesh, result => {
+      const bytes  = new Uint8Array(result);
+      let binary   = '';
+      bytes.forEach(b => binary += String.fromCharCode(b));
+      resolve(btoa(binary));
+    }, reject, { binary: true });
+  });
+}
+
+document.getElementById('btn-next-2').addEventListener('click', () => setStage(3));
+
+// ── Stage 3: Render ──
+document.querySelectorAll('.preset-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    document.getElementById('prompt-input').value = chip.dataset.prompt;
+  });
+});
+
+document.getElementById('btn-render').addEventListener('click', async () => {
+  const prompt = document.getElementById('prompt-input').value.trim();
+  if (!prompt)      { showToast('Select a material or enter a prompt'); return; }
+  if (!meshBase64)  { showToast('No mesh available — complete stage 2 first'); return; }
+
+  const btn = document.getElementById('btn-render');
+  btn.disabled    = true;
+  btn.textContent = 'Rendering...';
+  setProgress('render-progress', 10);
+  setStatus('render-status', 'Submitting to Blender...');
+
+  try {
+    const submitRes = await fetch(`${API_URL}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: { prompt, model_base64: meshBase64 } })
+    });
+
+    if (!submitRes.ok) throw new Error(`Submit failed: ${submitRes.status}`);
+    const job = await submitRes.json();
+    setProgress('render-progress', 20);
+    setStatus('render-status', 'Waiting for GPU...');
+
+    const result = await pollJob(job.id, 'render-progress', 'render-status', 20, 95);
+    setProgress('render-progress', 100);
+
+    if (result && result.image_base64) {
+      const mime   = result.format === 'gif' ? 'image/gif' : 'image/png';
+      const imgUrl = `data:${mime};base64,${result.image_base64}`;
+      document.getElementById('result-img').src = imgUrl;
+      document.getElementById('result-img').classList.add('visible');
+      document.getElementById('placeholder-3').style.display = 'none';
+      showFinalResult(imgUrl, result.model_base64, prompt);
+    } else {
+      throw new Error('No image returned');
+    }
+
+  } catch (err) {
+    setStatus('render-status', 'Error: ' + err.message);
+    showToast('Render error: ' + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Render with Blender';
+  }
+});
+
+// ── Stage 4 ──
+function showFinalResult(imgUrl, glbBase64, prompt) {
+  setStage(4);
+  document.getElementById('final-img').src = imgUrl;
+  document.getElementById('final-img').classList.add('visible');
+  document.getElementById('placeholder-4').style.display = 'none';
+  document.getElementById('result-info').textContent = `Material: ${prompt.slice(0, 60)}`;
+
+  const dlGif = document.getElementById('download-gif-btn');
+  dlGif.href = imgUrl;
+  dlGif.classList.add('visible');
+
+  if (glbBase64) {
+    resultGlbBase64 = glbBase64;
+    const bytes = Uint8Array.from(atob(glbBase64), c => c.charCodeAt(0));
+    const blob  = new Blob([bytes], { type: 'model/gltf-binary' });
+    const glbUrl = URL.createObjectURL(blob);
+    const dlGlb = document.getElementById('download-glb-btn');
+    dlGlb.href = glbUrl;
+    dlGlb.classList.add('visible');
+  }
+
+  document.getElementById('s4-subtitle').textContent = 'Render complete';
+  showToast('Done! Switch to 3D View to explore interactively.');
+}
+
+function switchTab(tab) {
+  const renderBtn = document.getElementById('tab-render');
+  const tab3dBtn  = document.getElementById('tab-3d');
+  const img       = document.getElementById('final-img');
+  const v3d       = document.getElementById('viewer-3d');
+
+  if (tab === 'render') {
+    renderBtn.style.borderColor = 'var(--accent)';
+    renderBtn.style.color = 'var(--accent)';
+    tab3dBtn.style.borderColor = '';
+    tab3dBtn.style.color = '';
+    img.style.display = '';
+    v3d.style.display = 'none';
+  } else {
+    tab3dBtn.style.borderColor = 'var(--accent)';
+    tab3dBtn.style.color = 'var(--accent)';
+    renderBtn.style.borderColor = '';
+    renderBtn.style.color = '';
+    img.style.display = 'none';
+    v3d.style.display = '';
+    if (!s4Scene && resultGlbBase64) load3DViewer(resultGlbBase64);
+  }
+}
+
+function load3DViewer(glbBase64) {
+  s4Scene = makeScene('viewer-3d');
+  s4Scene.scene.background = new THREE.Color(0x0a0a0c);
+
+  const bytes  = Uint8Array.from(atob(glbBase64), c => c.charCodeAt(0));
+  const blob   = new Blob([bytes], { type: 'model/gltf-binary' });
+  const url    = URL.createObjectURL(blob);
+
+  const loader = new GLTFLoader();
+  loader.load(url, gltf => {
+    const model = gltf.scene;
+    model.traverse(child => {
+      if (child.isMesh) {
+        child.material = new THREE.MeshStandardMaterial({
+          color: 0x999999, roughness: 0.5, metalness: 0.1
+        });
+      }
+    });
+    s4Scene.scene.add(model);
+    fitCamera(s4Scene.camera, s4Scene.controls, model);
+    URL.revokeObjectURL(url);
+  }, undefined, err => console.error('GLB load error:', err));
+}
+
+document.getElementById('btn-restart').addEventListener('click', () => {
+  plyGeometry     = null;
+  plyFile         = null;
+  meshBase64      = null;
+  resultGlbBase64 = null;
+  s4Scene         = null;
+  document.getElementById('viewer-3d').innerHTML = '';
+  document.getElementById('viewer-3d').style.display = 'none';
+  document.getElementById('final-img').style.display = '';
+  setStage(1);
+  uploadZone.classList.remove('has-file');
+  uploadZone.innerHTML = `<span class="upload-icon">☁</span><div>Drop .ply file here</div><div style="margin-top:4px;font-size:11px;">or click to browse</div>`;
+  document.getElementById('point-info').classList.remove('visible');
+  document.getElementById('btn-next-1').disabled = true;
+  document.getElementById('btn-next-2').disabled = true;
+  document.getElementById('result-img').classList.remove('visible');
+  document.getElementById('final-img').classList.remove('visible');
+  document.getElementById('download-gif-btn').classList.remove('visible');
+  document.getElementById('download-glb-btn').classList.remove('visible');
+  document.getElementById('placeholder-1').style.display = '';
+  document.getElementById('placeholder-4').style.display = '';
+  setProgress('mesh-progress', 0);
+  setProgress('render-progress', 0);
+  setStatus('mesh-status', '');
+  setStatus('render-status', '');
+});
+
+// ── Poll RunPod job ──
+async function pollJob(jobId, progressBarId, statusId, startPct, endPct) {
+  const start = Date.now();
+  let pct     = startPct;
+  const step  = (endPct - startPct) / 15;
+
+  while (true) {
+    await new Promise(r => setTimeout(r, 3000));
+    const res    = await fetch(`${API_URL}/status/${jobId}`, {
+      headers: {}
+    });
+    const status = await res.json();
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    setStatus(statusId, `Running... ${elapsed}s`);
+    pct = Math.min(pct + step, endPct);
+    setProgress(progressBarId, Math.round(pct));
+
+    if (status.status === 'COMPLETED') return status.output;
+    if (status.status === 'FAILED')    throw new Error('Job failed: ' + JSON.stringify(status.error));
+  }
+}
+
+// ── Connection check ──
+async function checkConnection() {
+  try {
+    const res = await fetch(`${API_URL}/health`, {
+      headers: {}
+    });
+    if (res.ok) {
+      document.getElementById('conn-dot').classList.add('connected');
+      document.getElementById('conn-label').textContent = 'Connected';
+    }
+  } catch {
+    document.getElementById('conn-label').textContent = 'Offline';
+  }
+}
+
+checkConnection();
+</script>
+</body>
+</html>
