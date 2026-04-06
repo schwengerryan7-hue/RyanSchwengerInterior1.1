@@ -20,7 +20,7 @@ jobs:
         with:
           context: ./blender-serverless
           push: true
-          tags: schwengerryan7/blender-serverless:v10
+          tags: schwengerryan7/blender-serverless:v50
 
   build-reconstruction:
     runs-on: ubuntu-latest
