@@ -377,7 +377,7 @@ function makeScene(containerId) {
     renderer.render(scene, camera);
   })();
 
-  return { scene, camera, controls };
+  return { scene, camera, controls, resize };
 }
 
 const pcScene  = makeScene('viewer-pointcloud');
@@ -791,7 +791,11 @@ function switchTab(tab) {
     renderBtn.style.color = '';
     img.style.display = 'none';
     v3d.style.display = '';
-    if (!s4Scene && resultGlbBase64) load3DViewer(resultGlbBase64);
+    if (!s4Scene && resultGlbBase64) {
+      setTimeout(() => load3DViewer(resultGlbBase64), 50);
+    } else if (s4Scene) {
+      setTimeout(() => s4Scene.resize(), 50);
+    }
   }
 }
 
