@@ -743,6 +743,8 @@ document.getElementById('btn-render').addEventListener('click', async () => {
 // ── Stage 4 ──
 function showFinalResult(imgUrl, glbBase64, prompt) {
   setStage(4);
+  s4Scene = null;
+  document.getElementById('viewer-3d').innerHTML = '';
   document.getElementById('placeholder-4').style.display = 'none';
   document.getElementById('result-info').textContent = `Material: ${prompt.slice(0, 60)}`;
 
