@@ -793,9 +793,27 @@ function switchTab(tab) {
   }
 }
 
+function materialFromPrompt(prompt) {
+  const p = prompt.toLowerCase();
+  if (p.includes('chrome'))                          return { color: 0xf0f0f0, roughness: 0.03, metalness: 1.0 };
+  if (p.includes('gold'))                            return { color: 0xc8961a, roughness: 0.15, metalness: 1.0 };
+  if (p.includes('steel') || p.includes('metal'))   return { color: 0xaaaaaa, roughness: 0.4,  metalness: 1.0 };
+  if (p.includes('matte black'))                     return { color: 0x111111, roughness: 0.8,  metalness: 0.0 };
+  if (p.includes('walnut'))                          return { color: 0x3d1f0a, roughness: 0.75, metalness: 0.0 };
+  if (p.includes('oak') || p.includes('wood'))       return { color: 0x8c5c1e, roughness: 0.75, metalness: 0.0 };
+  if (p.includes('fabric') || p.includes('grey') || p.includes('gray')) return { color: 0x8c8c8c, roughness: 0.95, metalness: 0.0 };
+  if (p.includes('leather'))                         return { color: 0x3d1a07, roughness: 0.65, metalness: 0.0 };
+  if (p.includes('marble'))                          return { color: 0xf0ede8, roughness: 0.05, metalness: 0.0 };
+  if (p.includes('terracotta') || p.includes('clay')) return { color: 0xb85f3f, roughness: 0.95, metalness: 0.0 };
+  return { color: 0x999999, roughness: 0.5, metalness: 0.0 };
+}
+
 function load3DViewer(glbBase64) {
   s4Scene = makeScene('viewer-3d');
   s4Scene.scene.background = new THREE.Color(0x0a0a0c);
+
+  const prompt = document.getElementById('prompt-input').value;
+  const matProps = materialFromPrompt(prompt);
 
   const bytes  = Uint8Array.from(atob(glbBase64), c => c.charCodeAt(0));
   const blob   = new Blob([bytes], { type: 'model/gltf-binary' });
@@ -806,9 +824,7 @@ function load3DViewer(glbBase64) {
     const model = gltf.scene;
     model.traverse(child => {
       if (child.isMesh) {
-        child.material = new THREE.MeshStandardMaterial({
-          color: 0x999999, roughness: 0.5, metalness: 0.1
-        });
+        child.material = new THREE.MeshStandardMaterial(matProps);
       }
     });
     s4Scene.scene.add(model);
