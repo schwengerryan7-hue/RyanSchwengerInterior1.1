@@ -52,7 +52,10 @@ def reconstruct_ply(ply_b64: str, tmpdir: str) -> str:
     convert_script = f"""
 import bpy
 bpy.ops.wm.read_factory_settings(use_empty=True)
-bpy.ops.import_mesh.ply(filepath=r"{recon_ply}")
+try:
+    bpy.ops.wm.ply_import(filepath=r"{recon_ply}")
+except:
+    bpy.ops.import_mesh.ply(filepath=r"{recon_ply}")
 bpy.ops.export_scene.gltf(filepath=r"{glb_path}", export_format='GLB')
 """
     script_path = os.path.join(tmpdir, "convert.py")
@@ -270,7 +273,10 @@ if os.path.exists(mesh_path):
     if ext.endswith((".glb", ".gltf")):
         bpy.ops.import_scene.gltf(filepath=mesh_path)
     elif ext.endswith(".ply"):
-        bpy.ops.import_mesh.ply(filepath=mesh_path)
+        try:
+            bpy.ops.wm.ply_import(filepath=mesh_path)
+        except:
+            bpy.ops.import_mesh.ply(filepath=mesh_path)
     elif ext.endswith(".obj"):
         bpy.ops.import_scene.obj(filepath=mesh_path)
 
