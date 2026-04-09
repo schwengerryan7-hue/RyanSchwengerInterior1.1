@@ -2,7 +2,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System dependencies for Blender headless + Open3D
+# System dependencies for Blender headless
 RUN apt-get update && apt-get install -y \
     python3 python3-pip wget xz-utils \
     libgl1 libglib2.0-0 libgomp1 \
@@ -20,10 +20,9 @@ RUN wget -q https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-
 ENV PATH="/opt/blender:$PATH"
 ENV BLENDER_PATH="/opt/blender/blender"
 
-# Python dependencies
+# Python dependencies (no Open3D — reconstruction is done inside Blender)
 RUN pip3 install --no-cache-dir \
     runpod \
-    open3d \
     numpy
 
 WORKDIR /app
