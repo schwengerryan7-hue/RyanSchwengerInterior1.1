@@ -1,18 +1,17 @@
 """
-handler.py — RunPod Serverless v54 — OpenClaw Vision Loop Edition
-=================================================================
+handler.py — RunPod Serverless v54 — Blender 3.6 LTS Edition
+=============================================================
 Two-pass intelligent rendering pipeline:
 
-  Pass 1 → Reconstruct mesh → Preview render (128 samples, ~10s)
+  Pass 1 → Reconstruct mesh → Preview render (128 samples)
   Pass 2 → Claude vision analyzes preview → JSON corrections → Final render (512 samples)
 
-Core fix: Face-level material zone assignment on the unified voxel blob.
-  Every face is individually classified by Z-height + world-space surface normal:
-    SEAT  — upward-facing  (nz > 0.40)  in mid-height zone  (z_norm 0.15–0.72)
-    BACK  — near-vertical  (|nz| < 0.55) in upper zone      (z_norm > 0.45)
-    FRAME — everything else (legs, base, connectors)
+Face-level material zone assignment:
+  SEAT  — upward-facing  (nz > 0.40)  in mid-height zone  (z_norm 0.15–0.72)
+  BACK  — near-vertical  (|nz| < 0.55) in upper zone      (z_norm > 0.45)
+  FRAME — everything else (legs, base, connectors)
 
-Input A : { ply_base64: str,   prompt: str } — point cloud → voxel remesh → render
+Input A : { ply_base64: str,   prompt: str } — point cloud → Open3D → render
 Input B : { model_base64: str, prompt: str } — GLB/OBJ → render directly
 
 Requires RunPod env var: ANTHROPIC_API_KEY
@@ -26,13 +25,12 @@ import os
 import json
 import tempfile
 
-BLENDER          = os.environ.get("BLENDER_PATH", "blender")
+BLENDER           = os.environ.get("BLENDER_PATH", "blender")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  BLENDER SCRIPT
-#  Runs inside Blender (headless). Reads /tmp/render_input.json for all params.
+#  BLENDER SCRIPT — runs inside Blender 3.6 headless
 # ═══════════════════════════════════════════════════════════════════════════════
 
 BLENDER_SCRIPT = r"""
@@ -49,25 +47,13 @@ output_png  = data["output_png"]
 do_recon    = data.get("do_recon", False)
 samples     = data.get("samples", 512)
 corrections = data.get("corrections", {})
+input_type  = data.get("input_type", "ply")   # "ply" | "glb"
 os.makedirs(os.path.dirname(output_png), exist_ok=True)
 
-print(f"[blender] prompt={prompt!r}  samples={samples}  corrections={corrections}")
+print(f"[blender] prompt={prompt!r}  samples={samples}")
 
-# ── Material parser ────────────────────────────────────────────────────────────
-#
-#  Two-step approach: detect COLOR and MATERIAL TYPE independently,
-#  then combine them.  This means any color + any material just works:
-#    "pink fur"        → fur shader  + pink color
-#    "grey fabric"     → fabric shader + grey color
-#    "orange velvet"   → velvet shader + orange color
-#    "chrome"          → chrome shader (color implicit in material)
-#    "all black chair" → diffuse + black color applied to every zone
-#
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Colours — detected by keyword, override the material's default base_color
+# ── Colour table ───────────────────────────────────────────────────────────────
 COLOUR_TABLE = [
-    # Multi-word first so "hot pink" beats "pink"
     ("hot pink",   (0.99, 0.08, 0.58, 1)),
     ("light blue", (0.55, 0.75, 0.95, 1)),
     ("light grey", (0.78, 0.78, 0.78, 1)),
@@ -78,7 +64,7 @@ COLOUR_TABLE = [
     ("dark blue",  (0.03, 0.06, 0.35, 1)),
     ("dark red",   (0.45, 0.02, 0.02, 1)),
     ("dark brown", (0.22, 0.10, 0.03, 1)),
-    # Single-word
+    ("hot pink",   (0.99, 0.08, 0.58, 1)),
     ("pink",       (0.95, 0.42, 0.62, 1)),
     ("purple",     (0.45, 0.10, 0.65, 1)),
     ("lavender",   (0.72, 0.60, 0.88, 1)),
@@ -105,10 +91,8 @@ COLOUR_TABLE = [
     ("silver",     (0.80, 0.80, 0.80, 1)),
 ]
 
-# Material types — (keyword, mat_type, default_color, metallic, roughness, coat)
-# Checked in order; first match wins. Multi-word keywords listed before single-word.
+# ── Material table ─────────────────────────────────────────────────────────────
 MAT_TABLE = [
-    # ── Soft / fabric ──────────────────────────────────────────────────────────
     ("shearling",  "fabric",  (0.88, 0.84, 0.76, 1), 0.0, 0.97, 0.0),
     ("sherpa",     "fabric",  (0.92, 0.90, 0.85, 1), 0.0, 0.97, 0.0),
     ("fur",        "fabric",  (0.85, 0.82, 0.78, 1), 0.0, 0.98, 0.0),
@@ -122,10 +106,8 @@ MAT_TABLE = [
     ("wool",       "fabric",  (0.80, 0.76, 0.68, 1), 0.0, 0.95, 0.0),
     ("upholstery", "fabric",  (0.75, 0.72, 0.65, 1), 0.0, 0.92, 0.0),
     ("fabric",     "fabric",  (0.75, 0.72, 0.65, 1), 0.0, 0.92, 0.0),
-    # ── Leather ────────────────────────────────────────────────────────────────
     ("suede",      "leather", (0.52, 0.38, 0.28, 1), 0.0, 0.88, 0.05),
     ("leather",    "leather", (0.28, 0.13, 0.05, 1), 0.0, 0.60, 0.35),
-    # ── Wood ───────────────────────────────────────────────────────────────────
     ("walnut",     "wood",    (0.22, 0.10, 0.04, 1), 0.0, 0.75, 0.15),
     ("mahogany",   "wood",    (0.35, 0.08, 0.04, 1), 0.0, 0.70, 0.20),
     ("oak",        "wood",    (0.52, 0.32, 0.12, 1), 0.0, 0.75, 0.10),
@@ -133,62 +115,46 @@ MAT_TABLE = [
     ("bamboo",     "wood",    (0.78, 0.72, 0.40, 1), 0.0, 0.80, 0.08),
     ("rattan",     "wood",    (0.72, 0.58, 0.32, 1), 0.0, 0.85, 0.05),
     ("wood",       "wood",    (0.52, 0.32, 0.12, 1), 0.0, 0.75, 0.10),
-    # ── Stone / ceramic ────────────────────────────────────────────────────────
     ("marble",     "marble",  (0.95, 0.93, 0.90, 1), 0.0, 0.05, 0.90),
     ("concrete",   "clay",    (0.60, 0.60, 0.58, 1), 0.0, 0.90, 0.0),
     ("terracotta", "clay",    (0.72, 0.38, 0.25, 1), 0.0, 0.95, 0.0),
     ("clay",       "clay",    (0.72, 0.38, 0.25, 1), 0.0, 0.95, 0.0),
-    # ── Metal ──────────────────────────────────────────────────────────────────
     ("chrome",     "metal",   (0.95, 0.95, 0.95, 1), 1.0, 0.03, 1.0),
     ("brass",      "metal",   (0.78, 0.62, 0.22, 1), 1.0, 0.20, 0.6),
     ("gold",       "metal",   (0.80, 0.55, 0.10, 1), 1.0, 0.15, 0.5),
     ("steel",      "metal",   (0.72, 0.72, 0.72, 1), 1.0, 0.35, 0.3),
     ("iron",       "metal",   (0.60, 0.60, 0.60, 1), 1.0, 0.50, 0.2),
     ("metal",      "metal",   (0.72, 0.72, 0.72, 1), 1.0, 0.35, 0.3),
-    # ── Plastic / acrylic ──────────────────────────────────────────────────────
     ("acrylic",    "plastic", (0.92, 0.92, 0.98, 1), 0.0, 0.08, 0.9),
     ("plastic",    "plastic", (0.80, 0.80, 0.80, 1), 0.0, 0.40, 0.6),
 ]
 
 def parse_material(desc):
-    # Step 1: find material type. Step 2: find color override. Step 3: combine.
     d = desc.lower().strip()
-
-    # Step 1 — material type
     found_type = None
     for keyword, mat_type, default_color, metallic, roughness, coat in MAT_TABLE:
         if keyword in d:
             found_type = (mat_type, list(default_color), metallic, roughness, coat)
             break
-
-    # Step 2 — color override (multi-word checked first via table order)
     found_color = None
     for color_name, color_val in COLOUR_TABLE:
         if color_name in d:
             found_color = color_val
             break
-
-    # Step 3 — combine
     if found_type:
         mat_type, base_color, metallic, roughness, coat = found_type
         if found_color:
             base_color = found_color
         return (mat_type, tuple(base_color), metallic, roughness, coat)
-
     if found_color:
-        # Color only, no material keyword → soft diffuse with that color
         return ("diffuse", found_color, 0.0, 0.72, 0.0)
-
-    # Absolute fallback
     return ("diffuse", (0.80, 0.80, 0.80, 1), 0.0, 0.80, 0.0)
 
-# ── Prompt → per-zone material assignments ────────────────────────────────────
+# ── Prompt → per-zone material assignments ─────────────────────────────────────
 import re
 p = prompt
-
 frame_mat = seat_mat = back_mat = None
 
-# Try explicit structural role phrases
 fm       = re.search(r'([\w\s]+?)\s+(?:frame|legs?|base|structure|rod|rail)', p)
 sm       = re.search(r'([\w\s]+?)\s+(?:seat|cushion|pad|upholst\w*|bottom)', p)
 bm_match = re.search(r'([\w\s]+?)\s+(?:back(?:rest)?|spine|headrest)', p)
@@ -196,14 +162,12 @@ if fm:       frame_mat = parse_material(fm.group(1))
 if sm:       seat_mat  = parse_material(sm.group(1))
 if bm_match: back_mat  = parse_material(bm_match.group(1))
 
-# "X with Y" / "X and Y" split — handles "oak frame with leather seat" etc.
 if not frame_mat or not seat_mat:
     parts = re.split(r'\s+with\s+|\s+and\s+', p, maxsplit=1)
     if len(parts) == 2:
         frame_mat = frame_mat or parse_material(parts[0])
         seat_mat  = seat_mat  or parse_material(parts[1])
     else:
-        # Single description → same material on all zones
         base = parse_material(p)
         frame_mat = seat_mat = back_mat = base
 
@@ -213,7 +177,7 @@ back_mat  = back_mat  or seat_mat
 
 print(f"[mat] frame={frame_mat[0]} {frame_mat[1][:3]}  seat={seat_mat[0]} {seat_mat[1][:3]}  back={back_mat[0]}")
 
-# Apply Claude's brightness / roughness corrections
+# ── Apply Claude corrections ───────────────────────────────────────────────────
 def apply_corrections(mat_def, brightness_mult, roughness_adj):
     mat_type, base_color, metallic, roughness, coat = mat_def
     bc = base_color
@@ -226,21 +190,9 @@ def apply_corrections(mat_def, brightness_mult, roughness_adj):
     new_rough = max(0.0, min(1.0, roughness + roughness_adj))
     return (mat_type, new_color, metallic, new_rough, coat)
 
-frame_mat = apply_corrections(
-    frame_mat,
-    corrections.get("frame_brightness_mult", 1.0),
-    corrections.get("frame_roughness_adj", 0.0)
-)
-seat_mat = apply_corrections(
-    seat_mat,
-    corrections.get("seat_brightness_mult", 1.0),
-    corrections.get("seat_roughness_adj", 0.0)
-)
-back_mat = apply_corrections(
-    back_mat,
-    corrections.get("back_brightness_mult", 1.0),
-    corrections.get("back_roughness_adj", 0.0)
-)
+frame_mat = apply_corrections(frame_mat, corrections.get("frame_brightness_mult", 1.0), corrections.get("frame_roughness_adj", 0.0))
+seat_mat  = apply_corrections(seat_mat,  corrections.get("seat_brightness_mult",  1.0), corrections.get("seat_roughness_adj",  0.0))
+back_mat  = apply_corrections(back_mat,  corrections.get("back_brightness_mult",  1.0), corrections.get("back_roughness_adj",  0.0))
 
 # ── PBR material builder ───────────────────────────────────────────────────────
 def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_scale=1.0, mat_hint=""):
@@ -258,7 +210,11 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
     try:
         bsdf.inputs["Coat Weight"].default_value    = coat
         bsdf.inputs["Coat Roughness"].default_value = roughness * 0.4
-    except: pass
+    except:
+        try:
+            bsdf.inputs["Clearcoat"].default_value          = coat
+            bsdf.inputs["Clearcoat Roughness"].default_value = roughness * 0.4
+        except: pass
     links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
 
     tc = nodes.new("ShaderNodeTexCoord"); tc.location = (-1000, 0)
@@ -268,8 +224,8 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
 
     def noise(loc, scale, detail, rough):
         n = nodes.new("ShaderNodeTexNoise"); n.location = loc
-        n.inputs["Scale"].default_value   = scale
-        n.inputs["Detail"].default_value  = detail
+        n.inputs["Scale"].default_value     = scale
+        n.inputs["Detail"].default_value    = detail
         n.inputs["Roughness"].default_value = rough
         links.new(mp.outputs["Vector"], n.inputs["Vector"])
         return n
@@ -283,30 +239,33 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
 
     if mat_type == "fabric":
         is_fur = any(k in mat_hint for k in ("fur","sherpa","shearling","velvet","chenille"))
-        n1 = noise((-600,150),  60*tex_scale, 16 if is_fur else 12, 0.85 if is_fur else 0.80)
-        n2 = noise((-600,-100), 12*tex_scale,  4, 0.60)
-        bump_str = 0.70 if is_fur else 0.45
-        b  = bump((200,-100), bump_str, 0.018 if is_fur else 0.015)
+        n1 = noise((-600, 150),  60*tex_scale, 16 if is_fur else 12, 0.85 if is_fur else 0.80)
+        n2 = noise((-600,-100),  12*tex_scale,  4, 0.60)
+        b  = bump((200,-100), 0.70 if is_fur else 0.45, 0.018 if is_fur else 0.015)
         links.new(n1.outputs["Fac"], b.inputs["Height"])
         ramp = nodes.new("ShaderNodeValToRGB"); ramp.location = (-300,-100)
-        ramp.color_ramp.elements[0].color = (base_color[0]*0.75,base_color[1]*0.75,base_color[2]*0.75,1)
+        ramp.color_ramp.elements[0].color = (base_color[0]*0.75, base_color[1]*0.75, base_color[2]*0.75, 1)
         ramp.color_ramp.elements[1].color = base_color
         links.new(n2.outputs["Fac"], ramp.inputs["Fac"])
         links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
         try:
-            sheen = 0.90 if is_fur else 0.50
-            bsdf.inputs["Sheen Weight"].default_value    = sheen
+            bsdf.inputs["Sheen Weight"].default_value    = 0.90 if is_fur else 0.50
             bsdf.inputs["Sheen Roughness"].default_value = 0.35 if is_fur else 0.50
-        except: pass
+        except:
+            try:
+                bsdf.inputs["Sheen"].default_value = 0.90 if is_fur else 0.50
+            except: pass
 
     elif mat_type == "wood":
         wave = nodes.new("ShaderNodeTexWave"); wave.location = (-600,100)
         wave.wave_type = "RINGS"
-        wave.inputs["Scale"].default_value            = 5*tex_scale
-        wave.inputs["Distortion"].default_value       = 4.5
-        wave.inputs["Detail"].default_value           = 8
-        wave.inputs["Detail Scale"].default_value     = 2.0
-        wave.inputs["Detail Roughness"].default_value = 0.6
+        wave.inputs["Scale"].default_value      = 5*tex_scale
+        wave.inputs["Distortion"].default_value = 4.5
+        wave.inputs["Detail"].default_value     = 8
+        try:
+            wave.inputs["Detail Scale"].default_value     = 2.0
+            wave.inputs["Detail Roughness"].default_value = 0.6
+        except: pass
         links.new(mp.outputs["Vector"], wave.inputs["Vector"])
         ramp = nodes.new("ShaderNodeValToRGB"); ramp.location = (-300,100)
         dark = (base_color[0]*0.55, base_color[1]*0.55, base_color[2]*0.55, 1)
@@ -335,17 +294,19 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
         b = bump((200,-100), 0.55, 0.025)
         links.new(n.outputs["Fac"], b.inputs["Height"])
         ramp = nodes.new("ShaderNodeValToRGB"); ramp.location = (-300,100)
-        ramp.color_ramp.elements[0].color = (base_color[0]*0.72,base_color[1]*0.72,base_color[2]*0.72,1)
-        ramp.color_ramp.elements[1].color = (min(1,base_color[0]*1.15),min(1,base_color[1]*1.15),min(1,base_color[2]*1.15),1)
+        ramp.color_ramp.elements[0].color = (base_color[0]*0.72, base_color[1]*0.72, base_color[2]*0.72, 1)
+        ramp.color_ramp.elements[1].color = (min(1,base_color[0]*1.15), min(1,base_color[1]*1.15), min(1,base_color[2]*1.15), 1)
         links.new(n.outputs["Fac"], ramp.inputs["Fac"])
         links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
         try:
             bsdf.inputs["Sheen Weight"].default_value    = 0.25
             bsdf.inputs["Sheen Roughness"].default_value = 0.45
-        except: pass
+        except:
+            try: bsdf.inputs["Sheen"].default_value = 0.25
+            except: pass
 
     elif mat_type == "marble":
-        n = noise((-700,0), 3.5*tex_scale, 12, 0.65)
+        n    = noise((-700,0), 3.5*tex_scale, 12, 0.65)
         wave = nodes.new("ShaderNodeTexWave"); wave.location = (-700,-200)
         wave.inputs["Scale"].default_value      = 2.8*tex_scale
         wave.inputs["Distortion"].default_value = 5.0
@@ -360,7 +321,7 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
         links.new(wave.outputs["Fac"], b.inputs["Height"])
 
     elif mat_type == "plastic":
-        n = noise((-600,0), 300*tex_scale, 8, 0.5)
+        n    = noise((-600,0), 300*tex_scale, 8, 0.5)
         rmap = nodes.new("ShaderNodeMapRange"); rmap.location = (-300,0)
         rmap.inputs["To Min"].default_value = roughness-0.02
         rmap.inputs["To Max"].default_value = roughness+0.02
@@ -390,35 +351,19 @@ if os.path.exists(mesh_path):
         try:   bpy.ops.wm.ply_import(filepath=mesh_path)
         except: bpy.ops.import_mesh.ply(filepath=mesh_path)
     elif ext.endswith(".obj"):
-        bpy.ops.import_scene.obj(filepath=mesh_path)
+        try:   bpy.ops.wm.obj_import(filepath=mesh_path)
+        except: bpy.ops.import_scene.obj(filepath=mesh_path)
 else:
     bpy.ops.mesh.primitive_cube_add(size=2)
 
-# ── Voxel remesh (point cloud → solid surface) ────────────────────────────────
-if do_recon:
-    print("[recon] Voxel remesh...")
+# ── Fix rotation (PLY from scanner is Y-up; GLB importers handle it themselves) ─
+if input_type == "ply":
     for obj in bpy.context.scene.objects:
         if obj.type == "MESH":
-            bpy.context.view_layer.objects.active = obj
-            obj.select_set(True)
-            dims = [obj.dimensions.x, obj.dimensions.y, obj.dimensions.z]
-            max_dim = max(dims) if max(dims) > 0 else 1.0
-            voxel_size = max_dim / 100.0   # finer voxels = more detail preserved
-            mod = obj.modifiers.new("Remesh","REMESH")
-            mod.mode = "VOXEL"
-            mod.voxel_size = voxel_size
-            mod.adaptivity = 0.0
-            bpy.ops.object.modifier_apply(modifier="Remesh")
-            bpy.ops.object.shade_smooth()
-            print(f"[recon] voxel_size={voxel_size:.4f}")
-            break
-
-# ── Fix rotation ───────────────────────────────────────────────────────────────
-for obj in bpy.context.scene.objects:
-    if obj.type == "MESH":
-        obj.rotation_euler[0] = math.radians(90)
-bpy.ops.object.select_all(action="SELECT")
-bpy.ops.object.transform_apply(rotation=True)
+            obj.rotation_euler[0] = math.radians(90)
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.transform_apply(rotation=True)
+    print("[rotate] Applied 90° X rotation for PLY (Y-up → Z-up)")
 
 # ── Smooth + subdivide ─────────────────────────────────────────────────────────
 for obj in bpy.context.scene.objects:
@@ -446,51 +391,29 @@ size      = max(max_x-min_x, max_y-min_y, max_z-min_z, 0.01)
 height    = max(max_z-min_z, 0.01)
 tex_scale = max(0.5, min(4.0, 1.0/size))
 
-# ════════════════════════════════════════════════════════════════════════════════
-#  FACE-LEVEL ZONE ASSIGNMENT  ← THE CORE FIX
-#
-#  The voxel remesh produces ONE unified object.  The old per-object classify()
-#  ran once and painted everything with one material.
-#
-#  This loop classifies EVERY FACE individually using:
-#    z_norm  — where the face sits vertically (0=floor, 1=top of object)
-#    nz      — world-space normal Z component (+1=up, 0=sideways, -1=down)
-#
-#  Rules (tuned for typical chairs):
-#    SEAT  : nz >  0.40  AND  0.15 < z_norm < 0.72   → upward face in mid zone
-#    BACK  : |nz| < 0.55  AND  z_norm > 0.45          → vertical face in upper zone
-#    FRAME : everything else                           → legs, base, connectors
-# ════════════════════════════════════════════════════════════════════════════════
+print(f"[bounds] center={center}  size={size:.3f}  min_z={min_z:.3f}  max_z={max_z:.3f}")
 
+# ── Face-level zone assignment ─────────────────────────────────────────────────
 for obj in mesh_objects:
-    # Build the 3 material slots on this object
     obj.data.materials.clear()
     mat_fr = build_material("Mat_frame", *frame_mat, tex_scale, mat_hint=prompt)
     mat_se = build_material("Mat_seat",  *seat_mat,  tex_scale, mat_hint=prompt)
     mat_ba = build_material("Mat_back",  *back_mat,  tex_scale, mat_hint=prompt)
-    obj.data.materials.append(mat_fr)   # slot 0 — frame
-    obj.data.materials.append(mat_se)   # slot 1 — seat
-    obj.data.materials.append(mat_ba)   # slot 2 — back
+    obj.data.materials.append(mat_fr)
+    obj.data.materials.append(mat_se)
+    obj.data.materials.append(mat_ba)
 
-    # Normal matrix handles non-uniform object scale correctly
     normal_mat = obj.matrix_world.to_3x3().inverted_safe().transposed()
-
     bm = _bmesh.new()
     bm.from_mesh(obj.data)
     bm.faces.ensure_lookup_table()
-
     n_seat = n_back = n_frame = 0
 
     for face in bm.faces:
-        # World-space face centre
         world_pos = obj.matrix_world @ face.calc_center_median()
-        z_norm    = (world_pos.z - min_z) / height   # 0=bottom, 1=top
-
-        # World-space face normal
-        wn = (normal_mat @ face.normal).normalized()
-        nz = wn.z   # +1 = straight up
-
-        # --- classify ---
+        z_norm    = (world_pos.z - min_z) / height
+        wn        = (normal_mat @ face.normal).normalized()
+        nz        = wn.z
         if nz > 0.40 and 0.15 < z_norm < 0.72:
             face.material_index = 1; n_seat  += 1
         elif abs(nz) < 0.55 and z_norm > 0.45:
@@ -500,9 +423,8 @@ for obj in mesh_objects:
 
     print(f"[zone] obj={obj.name!r}  frame={n_frame}  seat={n_seat}  back={n_back}")
 
-    # Safety: if seat zone is completely empty the heuristics missed — broaden it
     if n_seat == 0:
-        print("[zone] WARN: no seat faces — applying z_norm 0.30-0.65 fallback")
+        print("[zone] WARN: no seat faces — broadening to z_norm 0.30-0.65")
         for face in bm.faces:
             world_pos = obj.matrix_world @ face.calc_center_median()
             z_norm    = (world_pos.z - min_z) / height
@@ -513,17 +435,17 @@ for obj in mesh_objects:
     bm.free()
     obj.data.update()
 
-# ── Floor (plain light grey — no shadow catcher, avoids black-render bug in 3.0.1) ──
-bpy.ops.mesh.primitive_plane_add(size=size*12, location=(center.x,center.y,min_z-0.001))
+# ── Floor ──────────────────────────────────────────────────────────────────────
+bpy.ops.mesh.primitive_plane_add(size=size*12, location=(center.x, center.y, min_z-0.001))
 floor = bpy.context.object; floor.name = "Floor"
 fm = bpy.data.materials.new("FloorMat"); fm.use_nodes = True
 fb = fm.node_tree.nodes.get("Principled BSDF")
 if fb:
-    fb.inputs["Base Color"].default_value = (0.92,0.92,0.92,1)
+    fb.inputs["Base Color"].default_value = (0.92, 0.92, 0.92, 1)
     fb.inputs["Roughness"].default_value  = 0.75
 floor.data.materials.append(fm)
 
-# ── Camera (3/4 product-photo angle, 85mm) ─────────────────────────────────────
+# ── Camera ─────────────────────────────────────────────────────────────────────
 cam_dist_mult = corrections.get("camera_distance_mult", 1.0)
 dist    = size * 2.8 * cam_dist_mult
 cam_loc = Vector((center.x+dist*0.55, center.y-dist*1.0, center.z+dist*0.45))
@@ -535,46 +457,32 @@ cam.data.dof.use_dof        = True
 cam.data.dof.focus_distance = (cam_loc-center).length
 cam.data.dof.aperture_fstop = 11.0
 bpy.context.scene.camera    = cam
+print(f"[camera] loc={cam_loc}  dist={dist:.3f}")
 
-# ── World — Nishita physical sky ───────────────────────────────────────────────
+# ── World background ───────────────────────────────────────────────────────────
 world = bpy.data.worlds.get("World") or bpy.data.worlds.new("World")
 bpy.context.scene.world = world
 world.use_nodes = True
-nt = world.node_tree; nt.nodes.clear()
-out_w   = nt.nodes.new("ShaderNodeOutputWorld"); out_w.location   = (600,0)
-bg_node = nt.nodes.new("ShaderNodeBackground");  bg_node.location = (300,0)
-sky     = nt.nodes.new("ShaderNodeTexSky");       sky.location     = (0,0)
-tc_w    = nt.nodes.new("ShaderNodeTexCoord");     tc_w.location    = (-300,0)
-try:
-    sky.sky_type="NISHITA"; sky.sun_elevation=math.radians(42)
-    sky.sun_rotation=math.radians(215); sky.air_density=1.0
-    sky.dust_density=0.05; sky.ozone_density=1.0
-except:
-    try: sky.sky_type="PREETHAM"; sky.turbidity=2.5
-    except: pass
-try:
-    nt.links.new(tc_w.outputs["Generated"], sky.inputs["Vector"])
-    nt.links.new(sky.outputs["Color"], bg_node.inputs["Color"])
-except:
-    bg_node.inputs["Color"].default_value = (0.6,0.7,0.9,1)
-bg_node.inputs["Color"].default_value = (0.72, 0.78, 0.92, 1)
-bg_node.inputs["Strength"].default_value = 1.8
-nt.links.new(bg_node.outputs["Background"], out_w.inputs["Surface"])
+wnt = world.node_tree
+wnt.nodes.clear()
+w_out = wnt.nodes.new("ShaderNodeOutputWorld");  w_out.location = (400,0)
+w_bg  = wnt.nodes.new("ShaderNodeBackground");   w_bg.location  = (0,0)
+w_bg.inputs["Color"].default_value    = (0.72, 0.78, 0.92, 1)
+w_bg.inputs["Strength"].default_value = 1.8
+wnt.links.new(w_bg.outputs["Background"], w_out.inputs["Surface"])
 
-# ── Sun lamp rig (robust in Blender 3.0.1 headless — no context issues) ─────────
-print(f"[bounds] center={center}  size={size:.3f}  min_z={min_z:.3f}  max_z={max_z:.3f}")
-
+# ── Sun lamp rig ───────────────────────────────────────────────────────────────
 def sun_lamp(rx, ry, rz, energy, color=(1,1,1)):
-    bpy.ops.object.light_add(type='SUN', location=(0,0,100))
+    bpy.ops.object.light_add(type='SUN', location=(0, 0, 100))
     l = bpy.context.object
-    l.data.energy = energy
-    l.data.color  = color
-    l.rotation_euler = (math.radians(rx), math.radians(ry), math.radians(rz))
+    l.data.energy        = energy
+    l.data.color         = color
+    l.rotation_euler     = (math.radians(rx), math.radians(ry), math.radians(rz))
     print(f"[light] SUN energy={energy} rot=({rx},{ry},{rz})")
 
-sun_lamp( 50,  0, -40, 5.0, (1.00, 0.97, 0.92))   # key — warm from upper-left
-sun_lamp( 35,  0, 140, 2.0, (0.90, 0.95, 1.00))   # fill — cool from right
-sun_lamp(-15,  0,  90, 2.5, (1.00, 0.98, 0.95))   # rim — from behind
+sun_lamp( 50,  0, -40, 5.0, (1.00, 0.97, 0.92))   # key — warm upper-left
+sun_lamp( 35,  0, 140, 2.0, (0.90, 0.95, 1.00))   # fill — cool right
+sun_lamp(-15,  0,  90, 2.5, (1.00, 0.98, 0.95))   # rim — behind
 
 # ── Render settings ────────────────────────────────────────────────────────────
 scene = bpy.context.scene
@@ -587,32 +495,33 @@ try:
     for d in prefs.devices: d.use = True
     print("[render] CUDA GPU enabled")
 except Exception as e:
-    print(f"[render] GPU unavailable, CPU fallback: {e}")
+    scene.cycles.device = "CPU"
+    print(f"[render] GPU unavailable → CPU fallback: {e}")
 
-scene.cycles.use_adaptive_sampling   = True
-scene.cycles.adaptive_threshold      = 0.008
-scene.cycles.samples                 = samples
-scene.cycles.adaptive_min_samples    = min(64, samples)
-scene.cycles.use_denoising           = True
+scene.cycles.use_adaptive_sampling  = True
+scene.cycles.adaptive_threshold     = 0.008
+scene.cycles.samples                = samples
+scene.cycles.adaptive_min_samples   = min(64, samples)
+scene.cycles.use_denoising          = True
 try:
     scene.cycles.denoiser               = "OPENIMAGEDENOISE"
     scene.cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
 except: pass
-scene.cycles.max_bounces             = 12
-scene.cycles.diffuse_bounces         = 6
-scene.cycles.glossy_bounces          = 6
-scene.cycles.transmission_bounces    = 8
-scene.cycles.volume_bounces          = 2
-scene.cycles.caustics_reflective     = False
-scene.cycles.caustics_refractive     = False
+scene.cycles.max_bounces            = 12
+scene.cycles.diffuse_bounces        = 6
+scene.cycles.glossy_bounces         = 6
+scene.cycles.transmission_bounces   = 8
+scene.cycles.volume_bounces         = 2
+scene.cycles.caustics_reflective    = False
+scene.cycles.caustics_refractive    = False
 
-scene.render.resolution_x            = 1280
-scene.render.resolution_y            = 1280
-scene.render.image_settings.file_format = "PNG"
-scene.render.image_settings.color_mode = "RGB"
-scene.render.film_transparent          = False
-scene.render.filepath                = output_png
-scene.frame_current                  = 1
+scene.render.resolution_x                   = 1280
+scene.render.resolution_y                   = 1280
+scene.render.image_settings.file_format     = "PNG"
+scene.render.image_settings.color_mode      = "RGB"
+scene.render.film_transparent               = False
+scene.render.filepath                       = output_png
+scene.frame_current                         = 1
 
 print(f"[render] samples={samples}  Starting Cycles render...")
 bpy.ops.render.render(write_still=True)
@@ -626,11 +535,9 @@ print(f"[render] Saved → {output_png}")
 
 def run_blender(mesh_path: str, prompt: str, tmpdir: str,
                 do_recon: bool, samples: int,
-                corrections: dict | None = None,
-                output_name: str = "render.png") -> str | None:
-    """
-    Run the Blender script. Returns path to output PNG or None on failure.
-    """
+                corrections=None,
+                output_name: str = "render.png",
+                input_type: str = "ply") -> str:
     output_png = os.path.join(tmpdir, "output", output_name)
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
 
@@ -642,6 +549,7 @@ def run_blender(mesh_path: str, prompt: str, tmpdir: str,
             "do_recon":    do_recon,
             "samples":     samples,
             "corrections": corrections or {},
+            "input_type":  input_type,
         }, f)
 
     script_path = os.path.join(tmpdir, "render.py")
@@ -652,62 +560,45 @@ def run_blender(mesh_path: str, prompt: str, tmpdir: str,
         [BLENDER, "--background", "--python", script_path],
         capture_output=True, text=True, timeout=600
     )
-    print(result.stdout[-3000:])
+    print(result.stdout[-4000:])
     if result.stderr:
-        print("[stderr]", result.stderr[-1500:])
+        print("[stderr]", result.stderr[-2000:])
 
-    return output_png if os.path.exists(output_png) else None
+    if os.path.exists(output_png):
+        sz = os.path.getsize(output_png)
+        print(f"[render] output file size: {sz} bytes")
+        if sz < 500:
+            print("[render] WARN: file is suspiciously small — likely a black/empty render")
+        return output_png
+    print("[render] ERROR: output PNG not found")
+    return None
 
 
 def analyze_with_claude(image_path: str, prompt: str) -> dict:
-    """
-    Send the preview render to Claude vision.
-    Returns a corrections dict that the final Blender render will apply.
-    """
     if not ANTHROPIC_API_KEY:
         print("[claude] No ANTHROPIC_API_KEY — skipping vision analysis")
         return {}
-
     try:
         import anthropic
-
         with open(image_path, "rb") as f:
             image_b64 = base64.b64encode(f.read()).decode()
 
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        system_prompt = """You are an expert 3D furniture rendering director.
+You review preview renders and return precise JSON corrections for the final render.
+Respond ONLY with a valid JSON object — no markdown, no explanation.
 
-        system_prompt = """You are an expert 3D furniture rendering director and product photographer.
-You review low-sample preview renders of 3D chair models and return precise technical corrections
-to achieve photorealistic product photography quality.
-
-You respond ONLY with a valid JSON object — no markdown fences, no explanation.
-
-JSON schema (all fields optional, omit fields that need no correction):
+JSON schema (all fields optional):
 {
-  "issues": ["brief description of each visual problem you see"],
-  "seat_brightness_mult":  1.0,   // >1 = brighter,  <1 = darker  (range 0.5–2.0)
-  "seat_roughness_adj":    0.0,   // add to roughness, range -0.3 to +0.3
+  "issues": ["brief description of each visual problem"],
+  "seat_brightness_mult":  1.0,
+  "seat_roughness_adj":    0.0,
   "frame_brightness_mult": 1.0,
   "frame_roughness_adj":   0.0,
   "back_brightness_mult":  1.0,
   "back_roughness_adj":    0.0,
-  "key_light_mult":        1.0,   // multiply key light energy
-  "fill_light_mult":       1.0,
-  "rim_light_mult":        1.0,
-  "camera_distance_mult":  1.0    // >1 = pull back (use if chair is cropped)
+  "camera_distance_mult":  1.0
 }"""
-
-        user_text = (
-            f"This is a preview render of a chair. Material prompt: \"{prompt}\"\n\n"
-            "Analyze the render for photorealism issues. Consider:\n"
-            "• Are the seat/back materials visually distinct from the frame/legs?\n"
-            "• Does leather look like real leather (dark, slightly glossy)?\n"
-            "• Does wood show visible grain contrast?\n"
-            "• Is the lighting flattering for a product photo?\n"
-            "• Is the chair fully in frame?\n\n"
-            "Return the corrections JSON only."
-        )
-
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=512,
@@ -715,37 +606,21 @@ JSON schema (all fields optional, omit fields that need no correction):
             messages=[{
                 "role": "user",
                 "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type":       "base64",
-                            "media_type": "image/png",
-                            "data":       image_b64,
-                        }
-                    },
-                    {"type": "text", "text": user_text}
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64}},
+                    {"type": "text", "text": f"Preview render of: \"{prompt}\"\nReturn corrections JSON only."}
                 ]
             }]
         )
-
         raw = response.content[0].text.strip()
-        print(f"[claude] response: {raw}")
-        corrections = json.loads(raw)
-        print(f"[claude] issues: {corrections.get('issues', [])}")
-        return corrections
-
-    except json.JSONDecodeError as e:
-        print(f"[claude] JSON parse error: {e} — using no corrections")
-        return {}
+        print(f"[claude] {raw}")
+        return json.loads(raw)
     except Exception as e:
-        print(f"[claude] error: {e} — using no corrections")
+        print(f"[claude] error: {e}")
         return {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  OPEN3D POISSON RECONSTRUCTION
-#  Converts a PLY point cloud into a watertight mesh with real faces.
-#  Voxel remesh inside Blender fails on point-only PLY files (no faces = black).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def reconstruct_ply(ply_path: str, tmpdir: str) -> str:
@@ -770,7 +645,7 @@ def reconstruct_ply(ply_path: str, tmpdir: str) -> str:
 
     out_path = os.path.join(tmpdir, "reconstructed.ply")
     o3d.io.write_triangle_mesh(out_path, mesh)
-    print(f"[open3d] Reconstruction done: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    print(f"[open3d] done: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     return out_path
 
 
@@ -789,55 +664,45 @@ def handler(job):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
-            # ── Save mesh file ───────────────────────────────────────────────
             if ply_b64:
-                print("[pipeline] PLY input — Open3D Poisson reconstruction")
+                print("[pipeline] PLY → Open3D Poisson reconstruction")
                 raw_ply = os.path.join(tmpdir, "input.ply")
                 with open(raw_ply, "wb") as f:
                     f.write(base64.b64decode(ply_b64))
-                # Reconstruct point cloud → watertight mesh with real faces
-                mesh_path = reconstruct_ply(raw_ply, tmpdir)
-                do_recon  = False  # mesh already has faces, skip Blender voxel remesh
+                mesh_path  = reconstruct_ply(raw_ply, tmpdir)
+                do_recon   = False
+                input_type = "ply"
             else:
-                print("[pipeline] GLB/model input — rendering directly")
-                mesh_path = os.path.join(tmpdir, "model.glb")
-                do_recon  = False
+                print("[pipeline] GLB/model → direct render")
+                mesh_path  = os.path.join(tmpdir, "model.glb")
+                do_recon   = False
+                input_type = "glb"
                 with open(mesh_path, "wb") as f:
                     f.write(base64.b64decode(model_b64))
 
-            # ── PASS 1: Preview render (128 samples, fast ~10s) ──────────────
-            print(f"[pipeline] PASS 1 — preview render | prompt: {prompt!r}")
-            preview_path = run_blender(
-                mesh_path, prompt, tmpdir,
-                do_recon=do_recon,
-                samples=128,
-                corrections={},
-                output_name="preview.png"
-            )
+            # Pass 1 — preview
+            print(f"[pipeline] PASS 1 preview | prompt={prompt!r}  input_type={input_type}")
+            preview_path = run_blender(mesh_path, prompt, tmpdir,
+                                       do_recon=do_recon, samples=128,
+                                       corrections={}, output_name="preview.png",
+                                       input_type=input_type)
 
-            # ── Claude vision analysis ───────────────────────────────────────
+            # Claude vision
             corrections = {}
             if preview_path:
-                print("[pipeline] Sending preview to Claude vision...")
                 corrections = analyze_with_claude(preview_path, prompt)
             else:
-                print("[pipeline] WARN: preview render failed — skipping Claude analysis")
+                print("[pipeline] preview failed — skipping Claude")
 
-            # ── PASS 2: Final render (512 samples, full quality) ─────────────
-            print(f"[pipeline] PASS 2 — final render | corrections={corrections}")
-            final_path = run_blender(
-                mesh_path, prompt, tmpdir,
-                do_recon=do_recon,
-                samples=512,
-                corrections=corrections,
-                output_name="final.png"
-            )
+            # Pass 2 — final
+            print(f"[pipeline] PASS 2 final | corrections={corrections}")
+            final_path = run_blender(mesh_path, prompt, tmpdir,
+                                     do_recon=do_recon, samples=512,
+                                     corrections=corrections, output_name="final.png",
+                                     input_type=input_type)
 
             if not final_path:
-                return {
-                    "error":  "Blender produced no final output",
-                    "issues": corrections.get("issues", [])
-                }
+                return {"error": "Blender produced no output", "issues": corrections.get("issues", [])}
 
             with open(final_path, "rb") as f:
                 return {
@@ -847,7 +712,7 @@ def handler(job):
                 }
 
         except subprocess.TimeoutExpired:
-            return {"error": "Timed out (600s limit)"}
+            return {"error": "Timed out (600s)"}
         except Exception as e:
             import traceback
             return {"error": str(e), "traceback": traceback.format_exc()}
