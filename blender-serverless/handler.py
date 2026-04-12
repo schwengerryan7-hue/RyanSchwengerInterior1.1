@@ -569,7 +569,12 @@ rim_mult  = corrections.get("rim_light_mult",  1.0)
 def area_light(loc, energy, sx, sy, rx, ry, rz, color=(1,1,1)):
     bpy.ops.object.light_add(type="AREA", location=loc)
     l = bpy.context.object
-    l.data.energy=energy; l.data.size=sx; l.data.size_y=sy
+    l.data.energy=energy
+    try: l.data.shape="RECTANGLE"
+    except: pass
+    l.data.size=sx
+    try: l.data.size_y=sy
+    except: pass
     l.data.color=color
     try: l.data.use_soft_falloff=True
     except: pass
