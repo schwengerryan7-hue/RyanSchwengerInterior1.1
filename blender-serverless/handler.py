@@ -513,15 +513,14 @@ for obj in mesh_objects:
     bm.free()
     obj.data.update()
 
-# ── Floor (shadow catcher) ─────────────────────────────────────────────────────
-bpy.ops.mesh.primitive_plane_add(size=size*10, location=(center.x,center.y,min_z-0.001))
+# ── Floor (plain light grey — no shadow catcher, avoids black-render bug in 3.0.1) ──
+bpy.ops.mesh.primitive_plane_add(size=size*12, location=(center.x,center.y,min_z-0.001))
 floor = bpy.context.object; floor.name = "Floor"
-floor.cycles.is_shadow_catcher = True
 fm = bpy.data.materials.new("FloorMat"); fm.use_nodes = True
 fb = fm.node_tree.nodes.get("Principled BSDF")
 if fb:
-    fb.inputs["Base Color"].default_value = (0.97,0.97,0.97,1)
-    fb.inputs["Roughness"].default_value  = 0.50
+    fb.inputs["Base Color"].default_value = (0.92,0.92,0.92,1)
+    fb.inputs["Roughness"].default_value  = 0.75
 floor.data.materials.append(fm)
 
 # ── Camera (3/4 product-photo angle, 85mm) ─────────────────────────────────────
@@ -620,7 +619,8 @@ scene.cycles.caustics_refractive     = False
 scene.render.resolution_x            = 1280
 scene.render.resolution_y            = 1280
 scene.render.image_settings.file_format = "PNG"
-scene.render.image_settings.color_mode = "RGBA"
+scene.render.image_settings.color_mode = "RGB"
+scene.render.film_transparent          = False
 scene.render.filepath                = output_png
 scene.frame_current                  = 1
 
