@@ -151,13 +151,7 @@ MAT_TABLE = [
 ]
 
 def parse_material(desc):
-    """
-    Parse any natural-language material description into shader params.
-    Steps:
-      1. Scan for a material TYPE keyword  → determines shader behaviour
-      2. Scan for a COLOR keyword          → overrides that material's default color
-      3. If only a color found (no type)   → plain diffuse with that color
-    """
+    # Step 1: find material type. Step 2: find color override. Step 3: combine.
     d = desc.lower().strip()
 
     # Step 1 — material type
