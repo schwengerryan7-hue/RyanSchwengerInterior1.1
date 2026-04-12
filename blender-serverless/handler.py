@@ -748,6 +748,38 @@ JSON schema (all fields optional, omit fields that need no correction):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  OPEN3D POISSON RECONSTRUCTION
+#  Converts a PLY point cloud into a watertight mesh with real faces.
+#  Voxel remesh inside Blender fails on point-only PLY files (no faces = black).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def reconstruct_ply(ply_path: str, tmpdir: str) -> str:
+    import open3d as o3d
+    import numpy as np
+
+    pcd = o3d.io.read_point_cloud(ply_path)
+    print(f"[open3d] {len(pcd.points)} points loaded")
+
+    if len(pcd.points) < 9:
+        raise ValueError(f"Point cloud too sparse: {len(pcd.points)} points")
+
+    pcd.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.15, max_nn=30)
+    )
+    pcd.orient_normals_consistent_tangent_plane(100)
+
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=9)
+    densities = np.asarray(densities)
+    mesh.remove_vertices_by_mask(densities < np.quantile(densities, 0.05))
+    mesh.compute_vertex_normals()
+
+    out_path = os.path.join(tmpdir, "reconstructed.ply")
+    o3d.io.write_triangle_mesh(out_path, mesh)
+    print(f"[open3d] Reconstruction done: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    return out_path
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  RUNPOD HANDLER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -764,17 +796,19 @@ def handler(job):
         try:
             # ── Save mesh file ───────────────────────────────────────────────
             if ply_b64:
-                print("[pipeline] PLY input — voxel remesh inside Blender")
-                mesh_path = os.path.join(tmpdir, "input.ply")
-                do_recon  = True
+                print("[pipeline] PLY input — Open3D Poisson reconstruction")
+                raw_ply = os.path.join(tmpdir, "input.ply")
+                with open(raw_ply, "wb") as f:
+                    f.write(base64.b64decode(ply_b64))
+                # Reconstruct point cloud → watertight mesh with real faces
+                mesh_path = reconstruct_ply(raw_ply, tmpdir)
+                do_recon  = False  # mesh already has faces, skip Blender voxel remesh
             else:
                 print("[pipeline] GLB/model input — rendering directly")
                 mesh_path = os.path.join(tmpdir, "model.glb")
                 do_recon  = False
-
-            raw_b64 = ply_b64 or model_b64
-            with open(mesh_path, "wb") as f:
-                f.write(base64.b64decode(raw_b64))
+                with open(mesh_path, "wb") as f:
+                    f.write(base64.b64decode(model_b64))
 
             # ── PASS 1: Preview render (128 samples, fast ~10s) ──────────────
             print(f"[pipeline] PASS 1 — preview render | prompt: {prompt!r}")
