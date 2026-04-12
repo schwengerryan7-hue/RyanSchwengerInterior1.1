@@ -557,34 +557,24 @@ try:
     nt.links.new(sky.outputs["Color"], bg_node.inputs["Color"])
 except:
     bg_node.inputs["Color"].default_value = (0.6,0.7,0.9,1)
-bg_node.inputs["Strength"].default_value = 0.35
+bg_node.inputs["Color"].default_value = (0.72, 0.78, 0.92, 1)
+bg_node.inputs["Strength"].default_value = 1.8
 nt.links.new(bg_node.outputs["Background"], out_w.inputs["Surface"])
 
-# ── Studio lighting rig ────────────────────────────────────────────────────────
-key_mult  = corrections.get("key_light_mult",  1.0)
-fill_mult = corrections.get("fill_light_mult", 1.0)
-rim_mult  = corrections.get("rim_light_mult",  1.0)
+# ── Sun lamp rig (robust in Blender 3.0.1 headless — no context issues) ─────────
+print(f"[bounds] center={center}  size={size:.3f}  min_z={min_z:.3f}  max_z={max_z:.3f}")
 
-def area_light(loc, energy, sx, sy, rx, ry, rz, color=(1,1,1)):
-    bpy.ops.object.light_add(type="AREA", location=loc)
+def sun_lamp(rx, ry, rz, energy, color=(1,1,1)):
+    bpy.ops.object.light_add(type='SUN', location=(0,0,100))
     l = bpy.context.object
-    l.data.energy=energy
-    try: l.data.shape="RECTANGLE"
-    except: pass
-    l.data.size=sx
-    try: l.data.size_y=sy
-    except: pass
-    l.data.color=color
-    try: l.data.use_soft_falloff=True
-    except: pass
-    l.rotation_euler=(math.radians(rx),math.radians(ry),math.radians(rz))
+    l.data.energy = energy
+    l.data.color  = color
+    l.rotation_euler = (math.radians(rx), math.radians(ry), math.radians(rz))
+    print(f"[light] SUN energy={energy} rot=({rx},{ry},{rz})")
 
-s = size
-area_light((center.x-s*1.8, center.y-s*0.6, center.z+s*2.0), 3800*key_mult,  s*1.6,s*1.2, 60,0,-35,(1.00,0.97,0.92))
-area_light((center.x+s*2.2, center.y+s*0.4, center.z+s*1.2),  900*fill_mult, s*2.0,s*1.8, 45,0, 50,(0.90,0.94,1.00))
-area_light((center.x+s*0.5, center.y+s*2.0, center.z+s*1.5), 1600*rim_mult,  s*0.6,s*1.6,-55,0, 20,(1.00,0.98,0.95))
-area_light((center.x,       center.y,       center.z+s*2.8),   500,            s*3.0,s*3.0,  0,0,  0,(0.95,0.97,1.00))
-area_light((center.x,       center.y,       min_z-s*0.4),      200,            s*4.0,s*4.0,180,0,  0,(0.98,0.97,0.95))
+sun_lamp( 50,  0, -40, 5.0, (1.00, 0.97, 0.92))   # key — warm from upper-left
+sun_lamp( 35,  0, 140, 2.0, (0.90, 0.95, 1.00))   # fill — cool from right
+sun_lamp(-15,  0,  90, 2.5, (1.00, 0.98, 0.95))   # rim — from behind
 
 # ── Render settings ────────────────────────────────────────────────────────────
 scene = bpy.context.scene
