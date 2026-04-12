@@ -570,7 +570,9 @@ def area_light(loc, energy, sx, sy, rx, ry, rz, color=(1,1,1)):
     bpy.ops.object.light_add(type="AREA", location=loc)
     l = bpy.context.object
     l.data.energy=energy; l.data.size=sx; l.data.size_y=sy
-    l.data.color=color; l.data.use_soft_falloff=True
+    l.data.color=color
+    try: l.data.use_soft_falloff=True
+    except: pass
     l.rotation_euler=(math.radians(rx),math.radians(ry),math.radians(rz))
 
 s = size
