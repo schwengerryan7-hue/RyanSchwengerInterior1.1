@@ -241,7 +241,7 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
         is_fur = any(k in mat_hint for k in ("fur","sherpa","shearling","velvet","chenille"))
         n1 = noise((-600, 150),  60*tex_scale, 16 if is_fur else 12, 0.85 if is_fur else 0.80)
         n2 = noise((-600,-100),  12*tex_scale,  4, 0.60)
-        b  = bump((200,-100), 0.70 if is_fur else 0.45, 0.018 if is_fur else 0.015)
+        b  = bump((200,-100), 0.30 if is_fur else 0.18, 0.012 if is_fur else 0.008)
         links.new(n1.outputs["Fac"], b.inputs["Height"])
         ramp = nodes.new("ShaderNodeValToRGB"); ramp.location = (-300,-100)
         ramp.color_ramp.elements[0].color = (base_color[0]*0.75, base_color[1]*0.75, base_color[2]*0.75, 1)
@@ -291,7 +291,7 @@ def build_material(name, mat_type, base_color, metallic, roughness, coat, tex_sc
 
     elif mat_type == "leather":
         n = noise((-600,100), 28*tex_scale, 8, 0.70)
-        b = bump((200,-100), 0.55, 0.025)
+        b = bump((200,-100), 0.15, 0.010)
         links.new(n.outputs["Fac"], b.inputs["Height"])
         ramp = nodes.new("ShaderNodeValToRGB"); ramp.location = (-300,100)
         ramp.color_ramp.elements[0].color = (base_color[0]*0.72, base_color[1]*0.72, base_color[2]*0.72, 1)
@@ -377,7 +377,7 @@ for obj in bpy.context.scene.objects:
         bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
         bpy.ops.object.shade_smooth()
         sub = obj.modifiers.new("Subdivision","SUBSURF")
-        sub.levels = 1; sub.render_levels = 2
+        sub.levels = 1; sub.render_levels = 1
         bpy.ops.object.modifier_apply(modifier="Subdivision")
         bm = _bmesh.new()
         bm.from_mesh(obj.data)
@@ -532,6 +532,18 @@ scene.frame_current                         = 1
 print(f"[render] samples={samples}  Starting Cycles render...")
 bpy.ops.render.render(write_still=True)
 print(f"[render] Saved → {output_png}")
+
+# ── Export GLB for 3D viewer (chair only, no floor/lights) ─────────────────────
+output_glb = output_png.replace(".png", ".glb")
+bpy.ops.object.select_all(action='DESELECT')
+for obj in bpy.context.scene.objects:
+    if obj.type == 'MESH' and obj.name != 'Floor':
+        obj.select_set(True)
+try:
+    bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=True)
+    print(f"[export] GLB saved → {output_glb}")
+except Exception as e:
+    print(f"[export] GLB failed: {e}")
 """
 
 
@@ -575,9 +587,10 @@ def run_blender(mesh_path: str, prompt: str, tmpdir: str,
         print(f"[render] output file size: {sz} bytes")
         if sz < 500:
             print("[render] WARN: file is suspiciously small — likely a black/empty render")
-        return output_png
+        glb_path = output_png.replace(".png", ".glb")
+        return output_png, glb_path if os.path.exists(glb_path) else None
     print("[render] ERROR: output PNG not found")
-    return None
+    return None, None
 
 
 def analyze_with_claude(image_path: str, prompt: str) -> dict:
@@ -639,6 +652,10 @@ def reconstruct_ply(ply_path: str, tmpdir: str) -> str:
     if len(pcd.points) < 9:
         raise ValueError(f"Point cloud too sparse: {len(pcd.points)} points")
 
+    # Remove outlier points before reconstruction
+    pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+    print(f"[open3d] {len(pcd.points)} points after outlier removal")
+
     pcd.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.15, max_nn=30)
     )
@@ -646,7 +663,10 @@ def reconstruct_ply(ply_path: str, tmpdir: str) -> str:
 
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=9)
     densities = np.asarray(densities)
-    mesh.remove_vertices_by_mask(densities < np.quantile(densities, 0.05))
+    # Increase density filter to 10% to strip more low-quality surface fragments
+    mesh.remove_vertices_by_mask(densities < np.quantile(densities, 0.10))
+    # Smooth out Poisson surface noise
+    mesh = mesh.filter_smooth_laplacian(number_of_iterations=5)
     mesh.compute_vertex_normals()
 
     out_path = os.path.join(tmpdir, "reconstructed.ply")
@@ -688,10 +708,10 @@ def handler(job):
 
             # Pass 1 — preview
             print(f"[pipeline] PASS 1 preview | prompt={prompt!r}  input_type={input_type}")
-            preview_path = run_blender(mesh_path, prompt, tmpdir,
-                                       do_recon=do_recon, samples=128,
-                                       corrections={}, output_name="preview.png",
-                                       input_type=input_type)
+            preview_path, _ = run_blender(mesh_path, prompt, tmpdir,
+                                          do_recon=do_recon, samples=128,
+                                          corrections={}, output_name="preview.png",
+                                          input_type=input_type)
 
             # Claude vision
             corrections = {}
@@ -700,22 +720,29 @@ def handler(job):
             else:
                 print("[pipeline] preview failed — skipping Claude")
 
-            # Pass 2 — final
+            # Pass 2 — final (also exports GLB)
             print(f"[pipeline] PASS 2 final | corrections={corrections}")
-            final_path = run_blender(mesh_path, prompt, tmpdir,
-                                     do_recon=do_recon, samples=512,
-                                     corrections=corrections, output_name="final.png",
-                                     input_type=input_type)
+            final_path, glb_path = run_blender(mesh_path, prompt, tmpdir,
+                                               do_recon=do_recon, samples=512,
+                                               corrections=corrections, output_name="final.png",
+                                               input_type=input_type)
 
             if not final_path:
                 return {"error": "Blender produced no output", "issues": corrections.get("issues", [])}
 
             with open(final_path, "rb") as f:
-                return {
+                result = {
                     "image_base64": base64.b64encode(f.read()).decode(),
                     "status":       "ok",
                     "claude_notes": corrections.get("issues", []),
                 }
+
+            if glb_path:
+                with open(glb_path, "rb") as f:
+                    result["mesh_base64"] = base64.b64encode(f.read()).decode()
+                print(f"[pipeline] GLB encoded: {os.path.getsize(glb_path)} bytes")
+
+            return result
 
         except subprocess.TimeoutExpired:
             return {"error": "Timed out (600s)"}

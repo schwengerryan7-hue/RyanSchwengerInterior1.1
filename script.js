@@ -190,8 +190,19 @@ async function triggerRender() {
 
     if (result && result.image_base64) {
       const imgUrl = `data:image/png;base64,${result.image_base64}`;
-      window.open(imgUrl, '_blank');   // DEBUG: open raw PNG in new tab
       showResult(imgUrl, prompt, elapsed);
+
+      // Load returned GLB into model-viewer for 3D rotation
+      if (result.mesh_base64) {
+        const glbBlob = new Blob(
+          [Uint8Array.from(atob(result.mesh_base64), c => c.charCodeAt(0))],
+          { type: 'model/gltf-binary' }
+        );
+        const glbUrl = URL.createObjectURL(glbBlob);
+        document.getElementById('model-viewer').src = glbUrl;
+        showToast('3D model ready — switch to 3D view to rotate');
+      }
+
       if (result.claude_notes && result.claude_notes.length > 0) {
         console.log('[Claude notes]', result.claude_notes);
       }
