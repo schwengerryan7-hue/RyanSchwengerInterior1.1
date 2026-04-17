@@ -104,22 +104,9 @@ function setView(view) {
   document.getElementById('btn-3d').classList.toggle('active', view === '3d');
   rv.style.display = view === 'render' ? 'flex' : 'none';
 
-  if (view === '3d' && window._glbUrl) {
-    // Use our own Three.js div, hide model-viewer
-    if (mv) mv.style.display = 'none';
-    let pv = document.getElementById('ply-viewer');
-    if (!pv) {
-      pv = document.createElement('div');
-      pv.id = 'ply-viewer';
-      pv.style.cssText = 'width:100%;flex:1;min-height:420px;display:block;';
-      mv ? mv.parentNode.insertBefore(pv, mv) : document.body.appendChild(pv);
-    }
-    pv.style.display = 'block';
-    init3DViewer(pv);
-  } else {
-    const pv = document.getElementById('ply-viewer');
-    if (pv) pv.style.display = 'none';
-    if (mv) { mv.style.display = view === '3d' ? 'block' : 'none'; mv.style.flex = '1'; }
+  if (mv) {
+    mv.style.display = view === '3d' ? 'block' : 'none';
+    if (view === '3d') mv.style.flex = '1';
   }
 }
 
@@ -319,15 +306,23 @@ async function triggerRender() {
       }
       showResult(imgUrl, prompt, elapsed, allImages);
 
-      // Load GLB into Three.js viewer for interactive 3D rotation
+      // Load GLB into model-viewer for interactive 3D rotation
       if (result.mesh_base64) {
         const glbBlob = new Blob(
           [Uint8Array.from(atob(result.mesh_base64), c => c.charCodeAt(0))],
           { type: 'model/gltf-binary' }
         );
-        window._glbUrl = URL.createObjectURL(glbBlob);
-        _3dViewerReady = false;
-        setTimeout(() => setView('3d'), 2000);
+        const glbUrl = URL.createObjectURL(glbBlob);
+        const mv = document.getElementById('model-viewer');
+        if (mv) {
+          mv.setAttribute('camera-controls', '');
+          mv.setAttribute('auto-rotate', '');
+          mv.setAttribute('shadow-intensity', '1');
+          mv.setAttribute('auto-rotate-delay', '0');
+          mv.src = glbUrl;
+          showToast('3D model ready — switching to 3D view');
+          setTimeout(() => setView('3d'), 1800);
+        }
       }
 
       if (result.claude_notes && result.claude_notes.length > 0) {
