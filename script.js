@@ -7,7 +7,6 @@ let history = [];
 
 // ─────────────────────────────────────────────
 // DOM READY — wire up ALL event listeners here
-// so functions are guaranteed to exist first
 // ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -35,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     uploadZone.style.borderColor = '';
     const file = e.dataTransfer.files[0];
-    // FIX: accept .ply in addition to .glb / .gltf
     if (file && (file.name.endsWith('.glb') || file.name.endsWith('.gltf') || file.name.endsWith('.ply'))) {
       handleFile(file);
     }
@@ -77,17 +75,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ─────────────────────────────────────────────
-// File handling (shared by click + drop)
+// File handling
 // ─────────────────────────────────────────────
 function handleFile(file) {
   currentFile = file;
+  _3dViewerReady = false; // reset 3D viewer for new file
   const zone = document.getElementById('upload-zone');
   zone.classList.add('has-file');
   zone.querySelector('.upload-text').innerHTML =
     `<strong>${file.name}</strong><br><span style="color:var(--text-muted)">Click to change</span>`;
   document.getElementById('file-label').textContent = file.name;
 
-  // Only load into 3D viewer if it's a GLB/GLTF (model-viewer can't show PLY)
+  // Only load into model-viewer if it's a GLB/GLTF
   if (!file.name.toLowerCase().endsWith('.ply')) {
     const url = URL.createObjectURL(file);
     document.getElementById('model-viewer').src = url;
@@ -105,7 +104,104 @@ function setView(view) {
   document.getElementById('btn-3d').classList.toggle('active', view === '3d');
   rv.style.display = view === 'render' ? 'flex' : 'none';
   mv.style.display = view === '3d' ? 'block' : 'none';
-  if (view === '3d') mv.style.flex = '1';
+  if (view === '3d') {
+    mv.style.flex = '1';
+    // If we have a PLY file, show Three.js 3D viewer
+    if (currentFile && currentFile.name.toLowerCase().endsWith('.ply')) {
+      init3DViewer(mv);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// Three.js PLY 3D viewer
+// ─────────────────────────────────────────────
+let _3dViewerReady = false;
+
+function init3DViewer(container) {
+  if (_3dViewerReady) return;
+
+  container.innerHTML = '<canvas id="ply-canvas" style="width:100%;height:100%;display:block;"></canvas>';
+  const canvas = document.getElementById('ply-canvas');
+
+  function loadScript(src, cb) {
+    const s = document.createElement('script'); s.src = src; s.onload = cb; document.head.appendChild(s);
+  }
+
+  const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js';
+  const PLY_CDN   = 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/PLYLoader.js';
+  const ORBIT_CDN = 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/controls/OrbitControls.js';
+
+  function startViewer() {
+    const THREE = window.THREE;
+    const w = container.clientWidth  || 600;
+    const h = container.clientHeight || 600;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(w, h);
+    renderer.setClearColor(0x1a1a2e);
+
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 100);
+    camera.position.set(0, 1, 3);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping   = true;
+    controls.dampingFactor   = 0.08;
+    controls.autoRotate      = true;
+    controls.autoRotateSpeed = 1.5;
+    controls.target.set(0, 0, 0);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const sun = new THREE.DirectionalLight(0xfff5e0, 1.8);
+    sun.position.set(3, 6, 4); scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xe0f0ff, 0.6);
+    fill.position.set(-3, 2, -2); scene.add(fill);
+
+    // Load PLY
+    const loader = new THREE.PLYLoader();
+    loader.load(URL.createObjectURL(currentFile), (geo) => {
+      geo.computeVertexNormals();
+      geo.computeBoundingBox();
+      const box  = geo.boundingBox;
+      const cx   = (box.min.x + box.max.x) / 2;
+      const cy   = (box.min.y + box.max.y) / 2;
+      const cz   = (box.min.z + box.max.z) / 2;
+      const size = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z);
+      geo.translate(-cx, -cy, -cz);
+      const scale = 2 / (size || 1);
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: geo.hasAttribute('color') ? 0xffffff : 0xc4a570,
+        vertexColors: geo.hasAttribute('color'),
+        roughness: 0.65,
+        metalness: 0.05,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.scale.setScalar(scale);
+      mesh.rotation.x = -Math.PI / 2; // PLY Y-up → Z-up
+      scene.add(mesh);
+      controls.update();
+      _3dViewerReady = true;
+      showToast('Drag to rotate • Scroll to zoom');
+    });
+
+    (function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    })();
+  }
+
+  if (window.THREE && window.THREE.PLYLoader && window.THREE.OrbitControls) {
+    startViewer();
+  } else if (window.THREE) {
+    loadScript(PLY_CDN, () => loadScript(ORBIT_CDN, startViewer));
+  } else {
+    loadScript(THREE_CDN, () => loadScript(PLY_CDN, () => loadScript(ORBIT_CDN, startViewer)));
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -133,7 +229,6 @@ async function triggerRender() {
   startLoading();
 
   try {
-    // FIX: detect PLY vs GLB and send to correct handler key
     let model_base64 = null;
     let ply_base64 = null;
     if (currentFile) {
@@ -152,7 +247,6 @@ async function triggerRender() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${RUNPOD_API_KEY}`
       },
-      // FIX: include both keys so handler picks the right path
       body: JSON.stringify({ input: { prompt, model_base64, ply_base64 } })
     });
 
@@ -198,24 +292,9 @@ async function triggerRender() {
       }
       showResult(imgUrl, prompt, elapsed, allImages);
 
-      // Load GLB into model-viewer for interactive 3D rotation
-      if (result.mesh_base64) {
-        console.log('[3D] GLB received, loading into model-viewer...');
-        const glbBlob = new Blob(
-          [Uint8Array.from(atob(result.mesh_base64), c => c.charCodeAt(0))],
-          { type: 'model/gltf-binary' }
-        );
-        const glbUrl = URL.createObjectURL(glbBlob);
-        const mv = document.getElementById('model-viewer');
-        mv.src = glbUrl;
-        mv.setAttribute('auto-rotate', '');
-        mv.setAttribute('camera-controls', '');
-        mv.setAttribute('shadow-intensity', '1');
-        // Auto-switch to 3D view after short delay so render shows first
-        setTimeout(() => setView('3d'), 1500);
-        showToast('3D model loaded — drag to rotate!');
-      } else {
-        console.log('[3D] No mesh_base64 in response — GLB was too large or export failed');
+      // Auto-open 3D viewer after 2s if PLY was uploaded
+      if (currentFile && currentFile.name.toLowerCase().endsWith('.ply')) {
+        setTimeout(() => setView('3d'), 2000);
       }
 
       if (result.claude_notes && result.claude_notes.length > 0) {
@@ -273,10 +352,7 @@ function showResult(imgUrl, prompt, time, allImages) {
   }
 
   const ri = document.getElementById('result-img');
-  if (ri) {
-    ri.src = imgUrl;
-    ri.classList.add('loaded');
-  }
+  if (ri) { ri.src = imgUrl; ri.classList.add('loaded'); }
   const rp = document.getElementById('result-placeholder');
   if (rp) rp.style.display = 'none';
 
@@ -286,10 +362,7 @@ function showResult(imgUrl, prompt, time, allImages) {
   if (st) st.textContent = time + 's';
 
   const dl = document.getElementById('download-btn');
-  if (dl) {
-    dl.href = imgUrl;
-    dl.classList.add('visible');
-  }
+  if (dl) { dl.href = imgUrl; dl.classList.add('visible'); }
 
   if (prevSrc && prevSrc !== imgUrl && prevSrc !== window.location.href && window.updateCompare) {
     window.updateCompare(prevSrc, imgUrl);
