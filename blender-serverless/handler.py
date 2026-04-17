@@ -553,6 +553,35 @@ if samples > 200:
         scene.render.filepath = alt_path
         bpy.ops.render.render(write_still=True)
         print(f"[render] alt{i} saved → {alt_path}")
+
+# ── Export decimated GLB for interactive 3D viewer ─────────────────────────────
+if samples > 200:
+    output_glb = output_png.replace(".png", ".glb")
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in bpy.context.scene.objects:
+        if obj.type == 'MESH' and obj.name != 'Floor':
+            bpy.context.view_layer.objects.active = obj
+            obj.select_set(True)
+            bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
+            dec = obj.modifiers.new("Decimate", "DECIMATE")
+            dec.ratio = 0.08
+            bpy.ops.object.modifier_apply(modifier="Decimate")
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=output_glb,
+            export_format='GLB',
+            use_selection=True,
+            export_draco_mesh_compression_enable=True,
+            export_draco_mesh_compression_level=6,
+        )
+        print(f"[export] GLB {os.path.getsize(output_glb)} bytes → {output_glb}")
+    except Exception as e:
+        # Draco not available — export without compression
+        try:
+            bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=True)
+            print(f"[export] GLB (no Draco) {os.path.getsize(output_glb)} bytes")
+        except Exception as e2:
+            print(f"[export] GLB failed: {e2}")
 """
 
 
@@ -601,9 +630,11 @@ def run_blender(mesh_path: str, prompt: str, tmpdir: str,
             p = output_png.replace(".png", f"_alt{i}.jpg")
             if os.path.exists(p):
                 alt_paths.append(p)
-        return output_png, alt_paths
+        glb_path = output_png.replace(".png", ".glb")
+        glb_path = glb_path if os.path.exists(glb_path) else None
+        return output_png, alt_paths, glb_path
     print("[render] ERROR: output PNG not found")
-    return None, []
+    return None, [], None
 
 
 def analyze_with_claude(image_path: str, prompt: str) -> dict:
@@ -721,10 +752,10 @@ def handler(job):
 
             # Pass 1 — preview
             print(f"[pipeline] PASS 1 preview | prompt={prompt!r}  input_type={input_type}")
-            preview_path, _ = run_blender(mesh_path, prompt, tmpdir,
-                                          do_recon=do_recon, samples=128,
-                                          corrections={}, output_name="preview.png",
-                                          input_type=input_type)
+            preview_path, _, _ = run_blender(mesh_path, prompt, tmpdir,
+                                             do_recon=do_recon, samples=128,
+                                             corrections={}, output_name="preview.png",
+                                             input_type=input_type)
 
 
             # Claude vision
@@ -736,10 +767,10 @@ def handler(job):
 
             # Pass 2 — final (also exports GLB)
             print(f"[pipeline] PASS 2 final | corrections={corrections}")
-            final_path, alt_paths = run_blender(mesh_path, prompt, tmpdir,
-                                                do_recon=do_recon, samples=512,
-                                                corrections=corrections, output_name="final.png",
-                                                input_type=input_type)
+            final_path, alt_paths, glb_path = run_blender(mesh_path, prompt, tmpdir,
+                                                          do_recon=do_recon, samples=512,
+                                                          corrections=corrections, output_name="final.png",
+                                                          input_type=input_type)
 
             if not final_path:
                 return {"error": "Blender produced no output", "issues": corrections.get("issues", [])}
@@ -758,6 +789,17 @@ def handler(job):
                         alt_b64.append(base64.b64encode(f.read()).decode())
                 result["alt_images"] = alt_b64
                 print(f"[pipeline] {len(alt_b64)} alt views encoded")
+
+            # Include GLB only if small enough to fit in RunPod response (<500KB)
+            if glb_path:
+                glb_size = os.path.getsize(glb_path)
+                print(f"[pipeline] GLB size: {glb_size} bytes")
+                if glb_size < 500_000:
+                    with open(glb_path, "rb") as f:
+                        result["mesh_base64"] = base64.b64encode(f.read()).decode()
+                    print(f"[pipeline] GLB included in response")
+                else:
+                    print(f"[pipeline] GLB too large ({glb_size} bytes) — skipping")
 
             return result
 

@@ -198,6 +198,17 @@ async function triggerRender() {
       }
       showResult(imgUrl, prompt, elapsed, allImages);
 
+      // Load GLB into model-viewer for interactive 3D rotation
+      if (result.mesh_base64) {
+        const glbBlob = new Blob(
+          [Uint8Array.from(atob(result.mesh_base64), c => c.charCodeAt(0))],
+          { type: 'model/gltf-binary' }
+        );
+        const glbUrl = URL.createObjectURL(glbBlob);
+        document.getElementById('model-viewer').src = glbUrl;
+        showToast('3D model ready — click "3D" to rotate');
+      }
+
       if (result.claude_notes && result.claude_notes.length > 0) {
         console.log('[Claude notes]', result.claude_notes);
       }
@@ -373,4 +384,3 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3000);
 }
-
